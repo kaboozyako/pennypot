@@ -8,12 +8,17 @@ import { PENNYPOT_ADDRESS } from "./addresses";
 // "server-only"` guard makes this module throw if it's ever pulled into a
 // client bundle (it touches KEEPER_PK).
 //
-// Gas policy: no gas fields are set — ethers populates gasLimit from
-// eth_estimateGas and EIP-1559 fees from getFeeData(). A single buyTicket()
-// should land well under ~1.3M gas; the estimate guard is a sanity check only.
+// Gas policy: buyTicket()'s real cost swings (~1.04M–1.2M+) with Megapot state
+// (Pyth entropy request, drawing-rollover init, LP accounting), and the bare
+// eth_estimateGas has under-provisioned and run OUT OF GAS — which also loops,
+// since an OOG'd buy never fronts the ticket so canBuyNextTicket stays true and
+// the cron keeps retrying. So we estimate, then set gasLimit to estimate +60%.
+// EIP-1559 fees are still left to ethers (getFeeData()); unused gas is refunded,
+// so the headroom is effectively free insurance.
 
 const BASE_CHAIN_ID = 8453;
-const GAS_BUDGET = 1_300_000n;
+const GAS_BUFFER_BPS = 160n; // gasLimit = estimate * 1.60
+const GAS_CEILING = 3_000_000n; // abort only if the estimate is pathological
 
 const PENNYPOT_KEEPER_ABI = [
   "function getState() view returns (uint256 currentDrawingId, uint256 currentTicketId, uint8 sold, uint64 deadline, bool canBuyNextTicket, uint256 reserve, bool isPaused)",
@@ -75,17 +80,19 @@ export async function maybeBuyNextTicket(): Promise<KeeperResult> {
     };
   }
 
-  // Pre-flight gas sanity guard (still send with NO gas overrides). A revert
-  // here means buyTicket() would revert right now — treat as a soft skip.
+  // Estimate, then buffer the gasLimit. A revert during estimation means
+  // buyTicket() would revert right now — treat as a soft skip.
+  let gasLimit: bigint;
   try {
     const est = await pennypot.buyTicket.estimateGas();
-    if (est > GAS_BUDGET) {
+    if (est > GAS_CEILING) {
       return {
         action: "abort",
-        reason: `gas estimate ${est.toString()} exceeds budget ${GAS_BUDGET.toString()}`,
+        reason: `gas estimate ${est.toString()} exceeds ceiling ${GAS_CEILING.toString()}`,
         ...meta,
       };
     }
+    gasLimit = (est * GAS_BUFFER_BPS) / 100n;
   } catch (e) {
     return {
       action: "skip",
@@ -95,11 +102,12 @@ export async function maybeBuyNextTicket(): Promise<KeeperResult> {
   }
 
   try {
-    const tx = await pennypot.buyTicket();
+    const tx = await pennypot.buyTicket({ gasLimit });
     const receipt = await tx.wait(1);
     return {
       action: "bought",
       txHash: tx.hash,
+      gasLimit: gasLimit.toString(),
       blockNumber: receipt?.blockNumber ?? null,
       gasUsed: receipt?.gasUsed?.toString() ?? null,
       ...meta,

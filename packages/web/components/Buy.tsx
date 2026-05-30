@@ -222,13 +222,11 @@ export function Buy() {
             <Spinner />
             <div className="min-w-0">
               <div className="text-lg font-medium text-ink-100 sm:text-xl">
-                {ticketId && ticketId > 0n && sold >= 100
-                  ? "This ticket just sold out."
-                  : "Lining up the next ticket"}
+                Loading next ticket
               </div>
               <div className="mt-1 text-sm text-ink-300">
                 A fresh Megapot ticket is being purchased — shares open in a
-                moment. This updates automatically.
+                moment.
               </div>
             </div>
           </div>
