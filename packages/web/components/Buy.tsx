@@ -9,6 +9,7 @@ import {
   useAccount,
   useChainId,
   usePublicClient,
+  useReadContract,
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
@@ -56,6 +57,22 @@ export function Buy() {
   // Lottery picks for the active ticket (the numbered balls).
   const picks = useTicketPicks(ticketId);
 
+  // Shares the connected user already holds on this ticket — folded into the
+  // slice so "your slice" reflects total ownership, not just the new buy.
+  const myShares = useReadContract({
+    chainId: base.id,
+    address: PENNYPOT_ADDRESS,
+    abi: pennypotAbi,
+    functionName: "getTicketShares",
+    args:
+      address && ticketId !== undefined ? [ticketId, address] : undefined,
+    query: {
+      enabled: !!address && ticketId !== undefined,
+      refetchInterval: 15_000,
+    },
+  });
+  const owned = (myShares.data as number | undefined) ?? 0;
+
   // Selling-shares window: active ticket exists, not full, deadline not passed.
   const sellingActive =
     !paused && ticketId !== undefined && ticketId > 0n && sold < 100 && !canBuy;
@@ -73,11 +90,12 @@ export function Buy() {
   const cappedCount = Math.max(1, Math.min(count, remaining));
   const costUsdc = BigInt(cappedCount) * CONSTS.SHARE_PRICE_USDC;
   const total = sold + cappedCount; // shares sold if no one else buys
-  // "Your slice" = your share of a FULL 100-share ticket (1¢ = 1%). This is the
-  // conservative baseline shown in the hero (assumes the ticket fills by draw
-  // time); the amplification badge below surfaces the upside if it stays
-  // undersubscribed, in which case the prize splits across fewer shares.
-  const slice = cappedCount / CONSTS.SHARES_PER_TICKET;
+  // "Your slice" = your share of a FULL 100-share ticket (1¢ = 1%), counting
+  // shares you ALREADY own on this ticket plus the new buy. Conservative
+  // baseline shown in the hero (assumes the ticket fills by draw time); the
+  // amplification badge surfaces the upside if it stays undersubscribed.
+  const ownedAfter = Math.min(owned + cappedCount, CONSTS.SHARES_PER_TICKET);
+  const slice = ownedAfter / CONSTS.SHARES_PER_TICKET;
   const amp = total > 0 ? CONSTS.SHARES_PER_TICKET / total : 0; // ×vs full ticket
   const subscribedPct = Math.round((total / CONSTS.SHARES_PER_TICKET) * 100);
   const jackpotUsd = topPrize !== undefined ? Number(topPrize) / 1e6 : undefined;
