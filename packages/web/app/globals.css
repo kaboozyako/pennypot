@@ -45,3 +45,46 @@ body::before {
   display: inline-block;
   animation: pop 280ms ease-out;
 }
+
+/* Interactive buy slider — big grabbable thumb, clearly a control (distinct
+   from the thin read-only fill bars). From the PennyPot design handoff. */
+.pp-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+.pp-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ff2d88;
+  border: 3px solid #101010;
+  box-shadow: 0 0 0 3px rgba(255, 45, 136, 0.25), 0 2px 10px rgba(255, 45, 136, 0.55);
+  cursor: grab;
+}
+.pp-range::-webkit-slider-thumb:active {
+  cursor: grabbing;
+}
+.pp-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ff2d88;
+  border: 3px solid #101010;
+  box-shadow: 0 0 0 3px rgba(255, 45, 136, 0.25), 0 2px 10px rgba(255, 45, 136, 0.55);
+  cursor: grab;
+}
+.pp-range::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+}
+.pp-range:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
