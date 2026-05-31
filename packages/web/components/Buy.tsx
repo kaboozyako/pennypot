@@ -72,8 +72,12 @@ export function Buy() {
   const remaining = Math.max(1, CONSTS.SHARES_PER_TICKET - sold); // shares left
   const cappedCount = Math.max(1, Math.min(count, remaining));
   const costUsdc = BigInt(cappedCount) * CONSTS.SHARE_PRICE_USDC;
-  const total = sold + cappedCount; // shares that exist at draw
-  const slice = total > 0 ? cappedCount / total : 0; // your fraction of the pot
+  const total = sold + cappedCount; // shares sold if no one else buys
+  // "Your slice" = your share of a FULL 100-share ticket (1¢ = 1%). This is the
+  // conservative baseline shown in the hero (assumes the ticket fills by draw
+  // time); the amplification badge below surfaces the upside if it stays
+  // undersubscribed, in which case the prize splits across fewer shares.
+  const slice = cappedCount / CONSTS.SHARES_PER_TICKET;
   const amp = total > 0 ? CONSTS.SHARES_PER_TICKET / total : 0; // ×vs full ticket
   const subscribedPct = Math.round((total / CONSTS.SHARES_PER_TICKET) * 100);
   const jackpotUsd = topPrize !== undefined ? Number(topPrize) / 1e6 : undefined;
@@ -500,15 +504,8 @@ function Ring({ slice }: { slice: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-        <span className="font-mono text-[26px] font-bold text-accent">
-          <NumberFlow
-            value={slice}
-            format={{
-              style: "percent",
-              minimumFractionDigits: 1,
-              maximumFractionDigits: 1,
-            }}
-          />
+        <span className="font-mono text-[26px] font-bold tabular-nums text-accent">
+          {(slice * 100).toFixed(1)}%
         </span>
         <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-300">
           your slice

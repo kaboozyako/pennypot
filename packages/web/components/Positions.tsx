@@ -20,6 +20,7 @@ import {
 import { formatUsdc } from "@/lib/format";
 import {
   useClaimable,
+  useGetState,
   useMegapotContractTickets,
   useUserPositions,
 } from "@/lib/hooks";
@@ -35,6 +36,8 @@ export function Positions() {
   const wrongChain = !!address && chainId !== base.id;
   const queryClient = useQueryClient();
   const claimable = useClaimable(address);
+  const { data: gs } = useGetState();
+  const currentDrawingId = gs?.[0];
   const { positions, loading, error } = useUserPositions(address);
 
   // Per-ticket detail (shares, holders, winningsPerShare, claimed).
@@ -148,7 +151,13 @@ export function Positions() {
     });
 
   const activeRows = rows.filter((r) => r.active);
-  const ticketsCount = rows.length;
+  // Tickets the user holds in the current Megapot round.
+  const currentRoundTickets = rows.filter(
+    (r) =>
+      r.drawing !== undefined &&
+      currentDrawingId !== undefined &&
+      r.drawing === currentDrawingId,
+  ).length;
   const activeShares = activeRows.reduce((s, r) => s + r.shares, 0);
   const claimableAmt = claimable.data ?? 0n;
   const hasClaimable = claimableAmt > 0n;
@@ -229,7 +238,7 @@ export function Positions() {
           <>
             {/* summary: stats + Claim, one inline row */}
             <div className="flex flex-wrap items-center gap-5">
-              <Stat k="Tickets" v={ticketsCount.toString()} />
+              <Stat k="Active tickets" v={currentRoundTickets.toString()} />
               <Stat k="Active shares" v={activeShares.toString()} />
               <Stat
                 k="Claimable"
