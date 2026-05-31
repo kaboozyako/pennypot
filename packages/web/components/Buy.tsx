@@ -20,7 +20,6 @@ import {
   CONSTS,
   useGetState,
   useMegapotDrawingTime,
-  useNow,
   useTicketPicks,
   useUsdc,
 } from "@/lib/hooks";
@@ -44,7 +43,6 @@ export function Buy() {
   const { switchChain } = useSwitchChain();
   const { data: state } = useGetState();
   const { drawingTime, topPrize } = useMegapotDrawingTime();
-  const now = useNow();
   const usdc = useUsdc(address);
   const [count, setCount] = useState(18);
   const [step, setStep] = useState<Step>("idle");
@@ -82,18 +80,14 @@ export function Buy() {
   const winUsd = jackpotUsd !== undefined ? slice * jackpotUsd : undefined;
   const fillPct = (cappedCount / remaining) * 100; // slider fill
 
-  // Countdown to the current drawing's close (HH:MM:SS).
-  const diff =
+  // Date of the current drawing's close (e.g. "July 1, 2026").
+  const drawingDate =
     drawingTime !== undefined
-      ? Math.max(0, Number(drawingTime) - Math.floor(now / 1000))
-      : undefined;
-  const cd =
-    diff !== undefined
-      ? {
-          h: Math.floor(diff / 3600),
-          m: Math.floor((diff % 3600) / 60),
-          s: diff % 60,
-        }
+      ? new Date(Number(drawingTime) * 1000).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
       : undefined;
 
   const usdcBalance = usdc.data?.[0]?.result as bigint | undefined;
@@ -254,22 +248,14 @@ export function Buy() {
           <div className="flex flex-col gap-[18px]">
             {/* ── ticket section: status line + numbers ── */}
             <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-2 whitespace-nowrap font-mono text-[11px] uppercase tracking-[0.12em] text-ink-300">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-300">
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_8px_#ff2d88]" />
-                <span className="truncate">
-                  Selling ticket shares for drawing in
+                <span>
+                  Selling Megapot ticket shares for drawing on
+                  {drawingDate ? (
+                    <span className="font-bold text-accent"> {drawingDate}</span>
+                  ) : null}
                 </span>
-                {cd ? (
-                  <span className="flex items-center font-bold tabular-nums text-accent">
-                    <NumberFlow value={cd.h} format={{ minimumIntegerDigits: 2 }} />
-                    <span className="px-0.5">:</span>
-                    <NumberFlow value={cd.m} format={{ minimumIntegerDigits: 2 }} />
-                    <span className="px-0.5">:</span>
-                    <NumberFlow value={cd.s} format={{ minimumIntegerDigits: 2 }} />
-                  </span>
-                ) : (
-                  <span className="font-bold tabular-nums text-accent">··:··:··</span>
-                )}
               </div>
 
               <div className="flex items-center justify-between gap-3">

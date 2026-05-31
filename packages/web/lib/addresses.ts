@@ -14,6 +14,11 @@ export const USDC_ADDRESS = (env.NEXT_PUBLIC_USDC_ADDRESS ??
 export const JACKPOT_ADDRESS = (env.NEXT_PUBLIC_JACKPOT_ADDRESS ??
   "0x3bAe643002069dBCbcd62B1A4eb4C4A397d042a2") as Address;
 
+// Megapot JackpotTicketNFT — each PennyPot ticket is an NFT here; used for
+// per-ticket Basescan links in the positions list.
+export const JACKPOT_TICKET_NFT_ADDRESS = (env.NEXT_PUBLIC_JACKPOT_TICKET_NFT_ADDRESS ??
+  "0x48FfE35AbB9f4780a4f1775C2Ce1c46185b366e4") as Address;
+
 // Floor for SharesBought log queries. Set NEXT_PUBLIC_PENNYPOT_DEPLOY_BLOCK to the
 // exact deploy block for faster reads; the default is a safe earlier block on Base.
 export const PENNYPOT_DEPLOY_BLOCK = BigInt(
