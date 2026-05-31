@@ -291,14 +291,30 @@ export function Buy() {
                     loading numbers…
                   </div>
                 )}
-                <div className="flex shrink-0 flex-col items-end gap-[3px]">
-                  <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-ink-300">
-                    Powered by
-                  </span>
-                  <span className="font-mono text-[13px] font-bold text-ink-100">
-                    Megapot
-                  </span>
-                </div>
+                <a
+                  href="https://megapot.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Powered by Megapot — visit megapot.io"
+                  className="group shrink-0"
+                >
+                  {/* The badge SVG is monochrome; render it via a CSS mask so it
+                      takes a real color — muted grey, white on hover. */}
+                  <span
+                    aria-hidden
+                    className="block aspect-[125/34] h-11 bg-ink-300 transition-colors group-hover:bg-white"
+                    style={{
+                      maskImage: "url(/brand/powered-by-megapot.svg)",
+                      maskRepeat: "no-repeat",
+                      maskPosition: "center",
+                      maskSize: "contain",
+                      WebkitMaskImage: "url(/brand/powered-by-megapot.svg)",
+                      WebkitMaskRepeat: "no-repeat",
+                      WebkitMaskPosition: "center",
+                      WebkitMaskSize: "contain",
+                    }}
+                  />
+                </a>
               </div>
             </div>
 
