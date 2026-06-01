@@ -97,6 +97,11 @@ export function Buy() {
   // shown as a second pie segment.
   const others = Math.max(0, sold - owned);
   const othersSlice = others / CONSTS.SHARES_PER_TICKET;
+  // Open seats left after your selection (mine + others + open = 100).
+  const openSeats = Math.max(
+    0,
+    CONSTS.SHARES_PER_TICKET - sold - cappedCount,
+  );
   const jackpotUsd = topPrize !== undefined ? Number(topPrize) / 1e6 : undefined;
   const winUsd = jackpotUsd !== undefined ? slice * jackpotUsd : undefined;
   const fillPct = (cappedCount / remaining) * 100; // slider fill
@@ -327,7 +332,7 @@ export function Buy() {
             <div className="flex items-center gap-[22px] px-0.5 py-1.5">
               <Ring slice={slice} others={othersSlice} />
               <div className="flex flex-col gap-1">
-                <Cap>If this ticket hits the jackpot</Cap>
+                <Cap>Potential jackpot slice</Cap>
                 <span className="font-mono text-[38px] font-bold leading-none tracking-[-0.01em] text-ink-100">
                   {winUsd !== undefined ? (
                     <NumberFlow
@@ -342,10 +347,12 @@ export function Buy() {
                     "$—"
                   )}
                 </span>
-                <span className="mt-0.5 font-mono text-[13px] text-ink-200">
-                  for{" "}
-                  <b className="text-accent">{formatUsdc(costUsdc, { dp: 2 })}</b>{" "}
-                  · {cappedCount} shares
+                <span className="mt-0.5 font-mono text-[13px]">
+                  <span className="text-accent">{ownedAfter} mine</span>
+                  <span className="text-ink-400"> · </span>
+                  <span style={{ color: "#6c6c74" }}>{others} others</span>
+                  <span className="text-ink-400"> · </span>
+                  <span className="text-ink-200">{openSeats} available</span>
                 </span>
               </div>
             </div>
@@ -353,7 +360,7 @@ export function Buy() {
             {/* buy control — large grabbable slider, distinct from read-only bars */}
             <div className="flex flex-col gap-3">
               <div className="flex items-baseline justify-between">
-                <Cap>Drag to buy share</Cap>
+                <Cap>Drag to select shares</Cap>
                 <span className="font-mono text-xs text-ink-200">
                   <b className="text-ink-100">{cappedCount}</b> / {remaining}
                 </span>
@@ -543,12 +550,9 @@ function Ring({ slice, others }: { slice: number; others: number }) {
           }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+      <div className="absolute inset-0 flex items-center justify-center">
         <span className="font-mono text-[26px] font-bold tabular-nums text-accent">
           {(slice * 100).toFixed(1)}%
-        </span>
-        <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-300">
-          your slice
         </span>
       </div>
     </div>
