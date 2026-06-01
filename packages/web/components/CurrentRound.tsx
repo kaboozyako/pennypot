@@ -65,7 +65,7 @@ export function CurrentRound() {
     <section className="relative z-10 mx-auto w-full max-w-3xl px-4 py-6">
       <div className="mb-3 flex items-center justify-between gap-3 px-1">
         <h2 className="font-mono text-xs uppercase tracking-[0.25em] text-ink-300">
-          ▌ Tickets in the current round
+          ▌ Live tickets
         </h2>
         <DrawingCountdown />
       </div>

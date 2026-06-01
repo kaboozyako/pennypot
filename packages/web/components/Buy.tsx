@@ -275,7 +275,6 @@ export function Buy() {
             {/* ── ticket section: status line + numbers ── */}
             <div className="flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-300">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_8px_#ff2d88]" />
                 <span>
                   Selling ticket shares for{" "}
                   {drawingDate ? (
@@ -287,7 +286,7 @@ export function Buy() {
                 </span>
               </div>
 
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 {picks.data ? (
                   <Balls
                     normals={picks.data.normals}
