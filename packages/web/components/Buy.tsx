@@ -45,7 +45,7 @@ export function Buy() {
   const { data: state } = useGetState();
   const { drawingTime, topPrize } = useMegapotDrawingTime();
   const usdc = useUsdc(address);
-  const [count, setCount] = useState(18);
+  const [count, setCount] = useState(1);
   const [step, setStep] = useState<Step>("idle");
   const [errMsg, setErrMsg] = useState<string | undefined>();
 
@@ -89,15 +89,14 @@ export function Buy() {
   const remaining = Math.max(1, CONSTS.SHARES_PER_TICKET - sold); // shares left
   const cappedCount = Math.max(1, Math.min(count, remaining));
   const costUsdc = BigInt(cappedCount) * CONSTS.SHARE_PRICE_USDC;
-  const total = sold + cappedCount; // shares sold if no one else buys
   // "Your slice" = your share of a FULL 100-share ticket (1¢ = 1%), counting
-  // shares you ALREADY own on this ticket plus the new buy. Conservative
-  // baseline shown in the hero (assumes the ticket fills by draw time); the
-  // amplification badge surfaces the upside if it stays undersubscribed.
+  // shares you ALREADY own on this ticket plus the new buy.
   const ownedAfter = Math.min(owned + cappedCount, CONSTS.SHARES_PER_TICKET);
   const slice = ownedAfter / CONSTS.SHARES_PER_TICKET;
-  const amp = total > 0 ? CONSTS.SHARES_PER_TICKET / total : 0; // ×vs full ticket
-  const subscribedPct = Math.round((total / CONSTS.SHARES_PER_TICKET) * 100);
+  // Shares already held by OTHERS on this ticket (current sold minus yours),
+  // shown as a second pie segment.
+  const others = Math.max(0, sold - owned);
+  const othersSlice = others / CONSTS.SHARES_PER_TICKET;
   const jackpotUsd = topPrize !== undefined ? Number(topPrize) / 1e6 : undefined;
   const winUsd = jackpotUsd !== undefined ? slice * jackpotUsd : undefined;
   const fillPct = (cappedCount / remaining) * 100; // slider fill
@@ -273,10 +272,13 @@ export function Buy() {
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-300">
                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_8px_#ff2d88]" />
                 <span>
-                  Selling Megapot ticket shares for drawing on
+                  Selling ticket shares for{" "}
                   {drawingDate ? (
-                    <span className="font-bold text-accent"> {drawingDate}</span>
-                  ) : null}
+                    <span className="font-bold text-accent">{drawingDate}</span>
+                  ) : (
+                    "the next"
+                  )}{" "}
+                  drawing
                 </span>
               </div>
 
@@ -323,7 +325,7 @@ export function Buy() {
 
             {/* hero: projected payout with the slice ring */}
             <div className="flex items-center gap-[22px] px-0.5 py-1.5">
-              <Ring slice={slice} />
+              <Ring slice={slice} others={othersSlice} />
               <div className="flex flex-col gap-1">
                 <Cap>If this ticket hits the jackpot</Cap>
                 <span className="font-mono text-[38px] font-bold leading-none tracking-[-0.01em] text-ink-100">
@@ -348,23 +350,10 @@ export function Buy() {
               </div>
             </div>
 
-            {/* amplification badge — the "why now" */}
-            <div className="flex items-center gap-3 rounded-xl border border-accent/20 bg-accent/[0.07] px-3.5 py-3">
-              <span className="font-mono text-[22px] font-bold tabular-nums text-accent">
-                {amp.toFixed(1)}×
-              </span>
-              <span className="font-mono text-xs leading-[1.45] text-ink-200">
-                Ticket only{" "}
-                <b className="text-ink-100">{subscribedPct}% sold</b> — each share
-                pays <b className="text-ink-100">{amp.toFixed(1)}×</b> what it
-                would in a full ticket.
-              </span>
-            </div>
-
             {/* buy control — large grabbable slider, distinct from read-only bars */}
             <div className="flex flex-col gap-3">
               <div className="flex items-baseline justify-between">
-                <Cap>Drag to buy more shares</Cap>
+                <Cap>Drag to buy share</Cap>
                 <span className="font-mono text-xs text-ink-200">
                   <b className="text-ink-100">{cappedCount}</b> / {remaining}
                 </span>
@@ -504,15 +493,19 @@ function Balls({
   );
 }
 
-// 132px donut showing your slice of the jackpot; arc animates as the slider moves.
-function Ring({ slice }: { slice: number }) {
+// 132px donut: pink = your slice, grey = held by others, dark track = unsold.
+// Arcs animate as the slider moves.
+function Ring({ slice, others }: { slice: number; others: number }) {
   const size = 132;
   const sw = 12;
   const r = (size - sw) / 2;
   const c = 2 * Math.PI * r;
+  const yourLen = Math.min(1, slice) * c;
+  const othersLen = Math.min(Math.max(0, 1 - slice), others) * c;
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        {/* unsold (empty seats) */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -521,6 +514,21 @@ function Ring({ slice }: { slice: number }) {
           stroke="#1d1d21"
           strokeWidth={sw}
         />
+        {/* held by others — starts where your slice ends */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="#6c6c74"
+          strokeWidth={sw}
+          strokeDasharray={`${othersLen} ${c}`}
+          strokeDashoffset={-yourLen}
+          style={{
+            transition: "stroke-dasharray 0.12s ease, stroke-dashoffset 0.12s ease",
+          }}
+        />
+        {/* your slice */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -528,11 +536,9 @@ function Ring({ slice }: { slice: number }) {
           fill="none"
           stroke="#ff2d88"
           strokeWidth={sw}
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={c * (1 - slice)}
+          strokeDasharray={`${yourLen} ${c}`}
           style={{
-            transition: "stroke-dashoffset 0.12s ease",
+            transition: "stroke-dasharray 0.12s ease",
             filter: "drop-shadow(0 0 6px rgba(255,45,136,0.5))",
           }}
         />
