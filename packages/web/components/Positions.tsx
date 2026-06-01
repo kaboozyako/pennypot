@@ -245,18 +245,20 @@ export function Positions() {
                 v={formatUsdc(claimableAmt)}
                 tone={hasClaimable ? "mint" : "dim"}
               />
-              <button
-                type="button"
-                onClick={doClaim}
-                disabled={!hasClaimable || withdrawing || wrongChain}
-                className={`ml-auto rounded-[9px] border border-ink-500 px-6 py-[11px] font-mono text-[13px] font-bold transition disabled:cursor-not-allowed ${
-                  hasClaimable
-                    ? "bg-accent text-[#10000a] hover:shadow-[0_4px_16px_rgba(255,45,136,0.35)]"
-                    : "bg-transparent text-ink-300"
-                }`}
-              >
-                {withdrawing ? "claiming…" : "Claim"}
-              </button>
+              {hasClaimable ? (
+                <button
+                  type="button"
+                  onClick={doClaim}
+                  disabled={withdrawing || wrongChain}
+                  className="ml-auto rounded-[9px] border border-ink-500 bg-accent px-6 py-[11px] font-mono text-[13px] font-bold text-[#10000a] transition hover:shadow-[0_4px_16px_rgba(255,45,136,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {withdrawing
+                    ? "claiming…"
+                    : wrongChain
+                      ? "switch to Base"
+                      : "Claim"}
+                </button>
+              ) : null}
             </div>
 
             <div className="my-5 h-px bg-ink-500" />

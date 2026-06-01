@@ -45,7 +45,7 @@ export function Buy() {
   const { data: state } = useGetState();
   const { drawingTime, topPrize } = useMegapotDrawingTime();
   const usdc = useUsdc(address);
-  const [count, setCount] = useState(1);
+  const [count, setCount] = useState(0);
   const [step, setStep] = useState<Step>("idle");
   const [errMsg, setErrMsg] = useState<string | undefined>();
 
@@ -87,7 +87,7 @@ export function Buy() {
 
   // ── live buy calculation (mirrors the design's useBuy) ──────────────────
   const remaining = Math.max(1, CONSTS.SHARES_PER_TICKET - sold); // shares left
-  const cappedCount = Math.max(1, Math.min(count, remaining));
+  const cappedCount = Math.max(0, Math.min(count, remaining));
   const costUsdc = BigInt(cappedCount) * CONSTS.SHARE_PRICE_USDC;
   // "Your slice" = your share of a FULL 100-share ticket (1¢ = 1%), counting
   // shares you ALREADY own on this ticket plus the new buy.
@@ -125,9 +125,6 @@ export function Buy() {
   const { writeContractAsync } = useWriteContract();
 
   const inFlight = step === "approving" || step === "buying";
-  const totalSteps = needsApprove ? 2 : 1;
-  const currentStep =
-    step === "approving" ? 1 : step === "buying" ? (needsApprove ? 2 : 1) : 0;
 
   // One-click flow: if allowance < cost, approve → wait → buy; else just buy.
   // Each step waits for on-chain confirmation; a single sonner toast morphs
@@ -232,23 +229,15 @@ export function Buy() {
 
   const buyButtonLabel =
     step === "approving"
-      ? `Step 1/2 — approving USDC ${formatUsdc(costUsdc)}…`
+      ? "Approving USDC…"
       : step === "buying"
-        ? needsApprove
-          ? `Step 2/2 — buying ${cappedCount} share${cappedCount === 1 ? "" : "s"}…`
-          : `buying ${cappedCount} share${cappedCount === 1 ? "" : "s"}…`
+        ? `Buying ${cappedCount} share${cappedCount === 1 ? "" : "s"}…`
         : step === "done"
           ? "✓ Confirmed"
-          : needsApprove
-            ? `Approve & Buy ${cappedCount} share${cappedCount === 1 ? "" : "s"} · ${formatUsdc(costUsdc)}`
-            : `Buy ${cappedCount} share${cappedCount === 1 ? "" : "s"} · ${formatUsdc(costUsdc)}`;
+          : `Buy ${cappedCount} share${cappedCount === 1 ? "" : "s"} · ${formatUsdc(costUsdc)}`;
 
   return (
     <section className="relative z-10 mx-auto w-full max-w-3xl px-4 pb-8">
-      <h2 className="mb-3 px-1 font-mono text-xs uppercase tracking-[0.25em] text-ink-300">
-        ▌ Active ticket
-      </h2>
-
       <div className="rounded-[18px] border border-ink-500 bg-ink-700 p-5 shadow-[0_0_0_1px_rgba(255,45,136,0.05),0_0_40px_rgba(255,45,136,0.06)] sm:p-[26px]">
         {paused ? (
           <p className="text-accent">Contract is paused.</p>
@@ -280,9 +269,8 @@ export function Buy() {
                   {drawingDate ? (
                     <span className="font-bold text-accent">{drawingDate}</span>
                   ) : (
-                    "the next"
-                  )}{" "}
-                  drawing
+                    "the next drawing"
+                  )}
                 </span>
               </div>
 
@@ -367,7 +355,7 @@ export function Buy() {
               <input
                 type="range"
                 className="pp-range"
-                min={1}
+                min={0}
                 max={remaining}
                 value={cappedCount}
                 disabled={inFlight}
@@ -404,37 +392,9 @@ export function Buy() {
                 </button>
               )}
 
-              {/* two-step progress while a buy is in flight */}
-              {inFlight ? (
-                <div className="mt-1 flex items-center gap-3">
-                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-ink-600">
-                    <div
-                      className="h-full bg-accent transition-[width] duration-500 ease-out"
-                      style={{
-                        width:
-                          step === "approving"
-                            ? "45%"
-                            : step === "buying"
-                              ? "100%"
-                              : "0%",
-                      }}
-                    />
-                  </div>
-                  <div className="shrink-0 font-mono text-[11px] uppercase tracking-widest text-ink-300">
-                    confirmation {currentStep}/{totalSteps}
-                  </div>
-                </div>
-              ) : null}
-
               {address && !wrongChain && insufficientBalance ? (
                 <div className="font-mono text-sm text-accent">
                   Not enough USDC.
-                </div>
-              ) : null}
-
-              {address && !wrongChain && needsApprove && !inFlight && step !== "done" ? (
-                <div className="font-mono text-[11px] text-ink-300">
-                  Two wallet confirmations: 1/ approve USDC, 2/ buy shares.
                 </div>
               ) : null}
 

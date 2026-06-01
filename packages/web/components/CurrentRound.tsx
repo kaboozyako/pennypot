@@ -82,7 +82,7 @@ export function CurrentRound() {
             {rows.map((r) => (
               <li
                 key={r.id.toString()}
-                className="flex items-center justify-between gap-3 px-3 py-3 sm:px-4"
+                className="flex flex-col items-start gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4"
               >
                 <div className="flex min-w-0 items-center gap-2">
                   {r.picks ? (
@@ -101,8 +101,8 @@ export function CurrentRound() {
                     </span>
                   ) : null}
                 </div>
-                <div className="shrink-0 text-right font-mono text-sm">
-                  <div className="flex items-center justify-end gap-2">
+                <div className="shrink-0 font-mono text-sm sm:text-right">
+                  <div className="flex items-center gap-2 sm:justify-end">
                     <div className="h-1.5 w-20 overflow-hidden rounded-full bg-ink-600">
                       <div
                         className="h-full bg-accent transition-[width] duration-500 ease-out"
