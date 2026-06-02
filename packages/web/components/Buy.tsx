@@ -45,7 +45,7 @@ export function Buy() {
   const { data: state } = useGetState();
   const { drawingTime, topPrize } = useMegapotDrawingTime();
   const usdc = useUsdc(address);
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState(50);
   const [step, setStep] = useState<Step>("idle");
   const [errMsg, setErrMsg] = useState<string | undefined>();
 
@@ -249,7 +249,7 @@ export function Buy() {
                 Loading next ticket
               </div>
               <div className="mt-1 text-sm text-ink-300">
-                A fresh Megapot ticket is being purchased — shares open in a
+                A fresh Megapot ticket is being purchased. Shares open in a
                 moment.
               </div>
             </div>
@@ -290,7 +290,7 @@ export function Buy() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Powered by Megapot — visit megapot.io"
-                  className="group shrink-0"
+                  className="group flex shrink-0 items-center self-center"
                 >
                   {/* The badge SVG is monochrome; render it via a CSS mask so it
                       takes a real color — muted grey, white on hover. */}

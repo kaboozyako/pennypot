@@ -40,18 +40,6 @@ export function Positions() {
   const currentDrawingId = gs?.[0];
   const { positions, loading, error } = useUserPositions(address);
 
-  // Per-ticket detail (shares, holders, winningsPerShare, claimed).
-  const ticketDetail = useReadContracts({
-    contracts: (positions ?? []).map((p) => ({
-      chainId: base.id,
-      address: PENNYPOT_ADDRESS,
-      abi: pennypotAbi,
-      functionName: "getTicket" as const,
-      args: [p.ticketId] as const,
-    })),
-    query: { enabled: !!positions && positions.length > 0, refetchInterval: 30_000 },
-  });
-
   // Each ticket's drawing id.
   const ticketDrawings = useReadContracts({
     contracts: (positions ?? []).map((p) => ({
@@ -64,29 +52,19 @@ export function Positions() {
     query: { enabled: !!positions && positions.length > 0, refetchInterval: 60_000 },
   });
 
-  // Drawing's ticket id list — for the friendly 1-based ticket number.
-  const drawingTicketLists = useReadContracts({
-    contracts: (positions ?? []).map((_p, i) => {
-      const drawing = ticketDrawings.data?.[i]?.result as bigint | undefined;
-      return {
-        chainId: base.id,
-        address: PENNYPOT_ADDRESS,
-        abi: pennypotAbi,
-        functionName: "getDrawingTicketIds" as const,
-        args: [drawing ?? 0n] as const,
-      };
-    }),
-    query: {
-      enabled:
-        !!positions &&
-        positions.length > 0 &&
-        !!ticketDrawings.data &&
-        ticketDrawings.data.every((r) => r?.result !== undefined),
-      refetchInterval: 60_000,
-    },
+  // Per-ticket detail → winningsPerShare (index 2) so we can show the won amount.
+  const ticketDetail = useReadContracts({
+    contracts: (positions ?? []).map((p) => ({
+      chainId: base.id,
+      address: PENNYPOT_ADDRESS,
+      abi: pennypotAbi,
+      functionName: "getTicket" as const,
+      args: [p.ticketId] as const,
+    })),
+    query: { enabled: !!positions && positions.length > 0, refetchInterval: 30_000 },
   });
 
-  // Each drawing's close time → the row's "DRAWING <date>" label.
+  // Each drawing's close time → the row's date label.
   const drawingStates = useReadContracts({
     contracts: (positions ?? []).map((_p, i) => {
       const drawing = ticketDrawings.data?.[i]?.result as bigint | undefined;
@@ -121,26 +99,30 @@ export function Positions() {
   // Combine + sort newest-drawing-first.
   const rows = (positions ?? [])
     .map((p, i) => {
-      const det = ticketDetail.data?.[i]?.result as
-        | readonly [number, number, bigint, boolean]
-        | undefined;
       const drawing = ticketDrawings.data?.[i]?.result as bigint | undefined;
-      const drawingIds = drawingTicketLists.data?.[i]?.result as
-        | readonly bigint[]
-        | undefined;
       const ds = drawingStates.data?.[i]?.result as
         | { drawingTime: bigint }
         | undefined;
-      const idx = drawingIds?.findIndex((id) => id === p.ticketId);
-      const ticketNumber = idx !== undefined && idx >= 0 ? idx + 1 : undefined;
-      const claimed = det?.[3] ?? false;
+      const det = ticketDetail.data?.[i]?.result as
+        | readonly [number, number, bigint, boolean]
+        | undefined;
+      // "Active" = the ticket belongs to the CURRENT Megapot round. Once the
+      // drawing flips, prior-round tickets are no longer active even if the
+      // keeper hasn't settled (claimed) them yet.
+      const active =
+        drawing !== undefined &&
+        currentDrawingId !== undefined &&
+        drawing === currentDrawingId;
+      // winningsPerShare × your shares — non-zero only for settled winners.
+      const wps = det?.[2] ?? 0n;
+      const won = wps > 0n ? wps * BigInt(p.shares) : 0n;
       return {
         ticketId: p.ticketId,
         shares: p.shares,
         drawing,
         drawingTime: ds?.drawingTime,
-        ticketNumber,
-        active: !claimed,
+        active,
+        won,
         picks: picksMap.get(p.ticketId.toString()),
       };
     })
@@ -151,13 +133,6 @@ export function Positions() {
     });
 
   const activeRows = rows.filter((r) => r.active);
-  // Tickets the user holds in the current Megapot round.
-  const currentRoundTickets = rows.filter(
-    (r) =>
-      r.drawing !== undefined &&
-      currentDrawingId !== undefined &&
-      r.drawing === currentDrawingId,
-  ).length;
   const activeShares = activeRows.reduce((s, r) => s + r.shares, 0);
   const claimableAmt = claimable.data ?? 0n;
   const hasClaimable = claimableAmt > 0n;
@@ -238,7 +213,7 @@ export function Positions() {
           <>
             {/* summary: stats + Claim, one inline row */}
             <div className="flex flex-wrap items-center gap-5">
-              <Stat k="Active tickets" v={currentRoundTickets.toString()} />
+              <Stat k="Active tickets" v={activeRows.length.toString()} />
               <Stat k="Active shares" v={activeShares.toString()} />
               <Stat
                 k="Claimable"
@@ -313,6 +288,7 @@ type Row = {
   shares: number;
   drawingTime?: bigint;
   active: boolean;
+  won: bigint;
   picks?: { normals: number[]; bonusball: number };
 };
 
@@ -324,37 +300,47 @@ function PositionRow({ r }: { r: Row }) {
           .toUpperCase()
       : "—";
   return (
-    <div className="flex items-center gap-4 border-b border-ink-500 py-4 last:border-b-0">
-      <PositionBalls picks={r.picks} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+    <div className="flex flex-col gap-3 border-b border-ink-500 py-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
+      {/* identity — balls, date, won badge (top line on mobile) */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 sm:flex-1">
+        <PositionBalls picks={r.picks} />
         <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-300">
-          Drawing {dateLabel}
+          {dateLabel}
         </span>
+        {r.won > 0n ? (
+          <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-accent">
+            won {formatUsdc(r.won, { dp: 2 })}
+          </span>
+        ) : null}
       </div>
-      <div className="flex w-[150px] shrink-0 flex-col items-end gap-1.5">
-        <div className="h-[5px] w-full overflow-hidden rounded-[3px] bg-[#1d1d21]">
-          <div
-            className={`h-full rounded-[3px] ${r.active ? "bg-accent" : "bg-ink-300"}`}
-            style={{ width: `${Math.min(100, r.shares)}%` }}
-          />
+
+      {/* metrics — bar + shares + link (bottom line on mobile) */}
+      <div className="flex items-center gap-4">
+        <div className="flex w-[150px] shrink-0 flex-col items-end gap-1.5">
+          <div className="h-[5px] w-full overflow-hidden rounded-[3px] bg-[#1d1d21]">
+            <div
+              className={`h-full rounded-[3px] ${r.active ? "bg-accent" : "bg-ink-300"}`}
+              style={{ width: `${Math.min(100, r.shares)}%` }}
+            />
+          </div>
+          <span
+            className={`font-mono text-[11.5px] font-bold tabular-nums ${
+              r.active ? "text-ink-100" : "text-ink-300"
+            }`}
+          >
+            {r.shares} shares
+          </span>
         </div>
-        <span
-          className={`font-mono text-[11.5px] font-bold tabular-nums ${
-            r.active ? "text-ink-100" : "text-ink-300"
-          }`}
+        <a
+          href={`https://basescan.org/nft/${JACKPOT_TICKET_NFT_ADDRESS}/${r.ticketId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="View on Basescan"
+          className="flex shrink-0 items-center text-ink-300 transition hover:text-accent"
         >
-          {r.shares} shares
-        </span>
+          <ExtIcon />
+        </a>
       </div>
-      <a
-        href={`https://basescan.org/nft/${JACKPOT_TICKET_NFT_ADDRESS}/${r.ticketId}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="View on Basescan"
-        className="flex shrink-0 items-center text-ink-300 transition hover:text-accent"
-      >
-        <ExtIcon />
-      </a>
     </div>
   );
 }

@@ -102,17 +102,19 @@ export function CurrentRound() {
                   ) : null}
                 </div>
                 <div className="shrink-0 font-mono text-sm sm:text-right">
-                  <div className="flex items-center gap-2 sm:justify-end">
-                    <div className="h-1.5 w-20 overflow-hidden rounded-full bg-ink-600">
-                      <div
-                        className="h-full bg-accent transition-[width] duration-500 ease-out"
-                        style={{ width: `${r.sold}%` }}
-                      />
+                  {r.holders > 0 ? (
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-ink-600">
+                        <div
+                          className="h-full bg-accent transition-[width] duration-500 ease-out"
+                          style={{ width: `${r.sold}%` }}
+                        />
+                      </div>
+                      <span className="w-9 text-right text-[11px] text-ink-200">
+                        {r.sold}%
+                      </span>
                     </div>
-                    <span className="w-9 text-right text-[11px] text-ink-200">
-                      {r.sold}%
-                    </span>
-                  </div>
+                  ) : null}
                   <div className="mt-1 text-[11px] text-ink-300">
                     {r.holders} holder{r.holders === 1 ? "" : "s"}
                   </div>
