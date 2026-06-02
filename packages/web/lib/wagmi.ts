@@ -12,19 +12,15 @@ import { base, mainnet } from "wagmi/chains";
 const projectId =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "pennypot-dev-placeholder";
 
-// All frontend RPC goes through Alchemy when NEXT_PUBLIC_ALCHEMY_API_KEY is set.
-// NEXT_PUBLIC_BASE_RPC_URL is honored as an explicit override; otherwise viem's
-// default Base RPC is used (rate-limited).
-const alchemyKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
-const baseRpcUrl =
-  process.env.NEXT_PUBLIC_BASE_RPC_URL ||
-  (alchemyKey ? `https://base-mainnet.g.alchemy.com/v2/${alchemyKey}` : undefined);
-// Ethereum mainnet transport is for ENS resolution only (ConnectKit looks up
-// the connected wallet's ENS name on chain 1). Without this, ConnectKit falls
-// back to a public RPC that CORS-blocks browsers and spams the console.
-const mainnetRpcUrl = alchemyKey
-  ? `https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}`
-  : undefined;
+// Frontend RPC endpoints are hardcoded to Alchemy. The key ships in the client
+// bundle either way (NEXT_PUBLIC_* is inlined at build), so there's nothing to
+// hide here. The Alchemy app behind this key must have BOTH Base and Ethereum
+// Mainnet enabled — Base for all contract reads/writes, Ethereum Mainnet (chain
+// 1) for ConnectKit's ENS name/avatar resolution. If mainnet isn't enabled the
+// ENS endpoint 403s and floods the console.
+const ALCHEMY_KEY = "K6f2Iq8QM9Vx5laNF09_P";
+const baseRpcUrl = `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
+const mainnetRpcUrl = `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
 
 export const wagmiConfig = createConfig(
   getDefaultConfig({
