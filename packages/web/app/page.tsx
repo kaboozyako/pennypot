@@ -15,7 +15,7 @@ export default function Page() {
         <a
           href="/"
           aria-label="PennyPot — home"
-          className="flex items-center font-mono text-4xl font-black leading-none tracking-tighter sm:text-5xl"
+          className="flex items-center font-mono text-[1.458rem] font-black leading-none tracking-tighter sm:text-[1.944rem]"
         >
           <span className="text-accent drop-shadow-[0_0_14px_rgba(255,45,136,0.6)]">
             PENNY

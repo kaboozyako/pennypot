@@ -338,8 +338,14 @@ export function Buy() {
                   <span className="text-accent">{ownedAfter} mine</span>
                   <span className="text-ink-400"> · </span>
                   <span style={{ color: "#6c6c74" }}>{others} others</span>
-                  <span className="text-ink-400"> · </span>
-                  <span className="text-ink-200">{openSeats} available</span>
+                  {openSeats > 0 ? (
+                    <>
+                      <span className="text-ink-400"> · </span>
+                      <span className="text-ink-200">
+                        {openSeats} available
+                      </span>
+                    </>
+                  ) : null}
                 </span>
               </div>
             </div>
