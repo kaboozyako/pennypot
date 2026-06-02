@@ -147,20 +147,6 @@ export default async function Image() {
           </div>
         </div>
 
-        {/* footer */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 20,
-            letterSpacing: 3,
-            color: "#737373",
-          }}
-        >
-          <span>BUILT ON MEGAPOT</span>
-          <span>BASE · 1¢ SHARES</span>
-        </div>
-
         {/* accent baseline */}
         <div
           style={{
