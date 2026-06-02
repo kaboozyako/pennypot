@@ -151,6 +151,29 @@ export function Buy() {
           id: toastId,
         });
         await publicClient.waitForTransactionReceipt({ hash });
+        // Let the freshly-confirmed allowance propagate before sending the buy.
+        // Wallet simulators (e.g. Rainbow) read from their own indexer, which can
+        // lag a block behind ours — they then see allowance still 0 and falsely
+        // warn "simulation failed, the transaction will most likely fail." Poll
+        // our RPC until the allowance is observable, then wait a short extra beat
+        // for slower third-party simulation backends to catch up. Bounded ~6s.
+        if (address) {
+          for (let i = 0; i < 12; i++) {
+            try {
+              const a = (await publicClient.readContract({
+                address: USDC_ADDRESS,
+                abi: erc20Abi,
+                functionName: "allowance",
+                args: [address, PENNYPOT_ADDRESS],
+              })) as bigint;
+              if (a >= costUsdc) break;
+            } catch {
+              // RPC lag — retry.
+            }
+            await new Promise((r) => setTimeout(r, 400));
+          }
+          await new Promise((r) => setTimeout(r, 1200));
+        }
         toast.loading(
           `Buying ${cappedCount} share${cappedCount === 1 ? "" : "s"}… (confirm in wallet)`,
           { id: toastId },
