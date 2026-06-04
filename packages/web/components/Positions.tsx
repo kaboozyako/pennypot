@@ -96,7 +96,8 @@ export function Positions() {
     return m;
   }, [picksQ.data]);
 
-  // Combine + sort newest-drawing-first.
+  // Combine + sort newest-first: by drawing desc, then by ticketId (purchase
+  // order) desc so same-drawing tickets show the most-recently-bought on top.
   const rows = (positions ?? [])
     .map((p, i) => {
       const drawing = ticketDrawings.data?.[i]?.result as bigint | undefined;
@@ -129,7 +130,8 @@ export function Positions() {
     .sort((a, b) => {
       const da = a.drawing ?? 0n;
       const db = b.drawing ?? 0n;
-      return da === db ? 0 : db > da ? 1 : -1;
+      if (da !== db) return db > da ? 1 : -1; // newest drawing first
+      return b.ticketId > a.ticketId ? 1 : -1; // then newest ticket (purchase order)
     });
 
   const activeRows = rows.filter((r) => r.active);
