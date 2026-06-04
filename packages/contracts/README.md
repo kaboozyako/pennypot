@@ -93,8 +93,11 @@ Users:
 ### Users
 
 - `buyTicketShares(uint256 expectedTicketId, uint8 count)` — buy 1..N shares of the active
-  ticket. `expectedTicketId` guards against the active ticket rolling over between
-  submit and execution.
+  ticket for yourself. `expectedTicketId` guards against the active ticket rolling over
+  between submit and execution.
+- `buyTicketSharesFor(uint256 expectedTicketId, uint8 count, address recipient)` — gift
+  shares: same as `buyTicketShares`, but the shares are credited to (and claimable only
+  by) `recipient` while USDC is still pulled from the caller. `recipient` must be non-zero.
 - `withdraw()` — pull the caller's entire credited winnings balance (no ticket ids).
 
 ### Permissionless cranks
@@ -190,7 +193,10 @@ forge test -vv
 - **`ticketPrice` change on Megapot bricks the contract.** `buyTicket` reverts if
   `Jackpot.ticketPrice() != 1 USDC`. If Megapot governance changes this, redeploy.
 - **No on-chain "drawings I've participated in".** By design — reconstruct user history
-  off-chain from `SharesBought` / `TicketBought` events (indexed).
+  off-chain from `SharesBought` / `TicketBought` events (indexed). `SharesBought` is
+  `(uint256 indexed ticketId, address indexed holder, address payer, uint8 count, uint8 newSold)`
+  — filter by `holder` for "shares I own" (gifts surface for the recipient); `payer` is
+  the funding address when shares were gifted.
 
 ## Security notes
 

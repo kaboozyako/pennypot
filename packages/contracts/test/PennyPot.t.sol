@@ -272,6 +272,121 @@ contract PennyPotTest is Test {
         pot.buyTicketShares(id1, 1);
     }
 
+    // ----- buyTicketSharesFor: gifting -----------------------------------------
+
+    function test_buyTicketSharesFor_creditsRecipientNotPayer() public {
+        uint256 id1 = _buyTicket();
+
+        uint256 aliceBefore = usdc.balanceOf(alice);
+        uint256 reserveBefore = pot.reservePool();
+
+        // Alice (payer) gifts 30 shares to bob (recipient).
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 30, bob);
+
+        // Shares credited to bob, not alice.
+        assertEq(pot.getTicketShares(id1, bob), 30);
+        assertEq(pot.getTicketShares(id1, alice), 0);
+
+        // Bob is the sole holder; sold reflects the gift.
+        (uint8 sold, uint8 holders,,) = pot.getTicket(id1);
+        assertEq(sold, 30);
+        assertEq(holders, 1);
+        (address[] memory hs,) = pot.getTicketHolders(id1);
+        assertEq(hs[0], bob);
+
+        // USDC was pulled from the payer (alice); reserve replenished by the cost.
+        uint256 cost = 30 * pot.SHARE_PRICE();
+        assertEq(aliceBefore - usdc.balanceOf(alice), cost);
+        assertEq(usdc.balanceOf(bob), 1_000_000); // bob's balance untouched
+        assertEq(pot.reservePool(), reserveBefore + cost);
+    }
+
+    function test_buyTicketSharesFor_recipientCanClaimPayerCannot() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+
+        // Alice gifts a full ticket's worth of shares to bob.
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 100, bob);
+
+        // Jackpot-tier win, 100 USDC payout.
+        jackpot.setTicketTier(d, id1, 11);
+        jackpot.setTierPayout(d, 11, 100_000_000);
+
+        vm.warp(block.timestamp + DRAWING_DURATION + 1);
+        usdc.mint(address(jackpot), 100_000_000);
+        jackpot.settleDrawing();
+        pot.claimWinnings(_ids(id1));
+
+        // The recipient (bob) is owed the winnings; the payer (alice) gets nothing.
+        assertEq(pot.claimable(bob), 100_000_000);
+        assertEq(pot.claimable(alice), 0);
+
+        uint256 bobBefore = usdc.balanceOf(bob);
+        vm.prank(bob);
+        pot.withdraw();
+        assertEq(usdc.balanceOf(bob) - bobBefore, 100_000_000);
+
+        // Alice has nothing to withdraw.
+        vm.expectRevert(PennyPot.NothingToWithdraw.selector);
+        vm.prank(alice);
+        pot.withdraw();
+    }
+
+    function test_buyTicketSharesFor_revertsZeroRecipient() public {
+        uint256 id1 = _buyTicket();
+        vm.expectRevert(PennyPot.ZeroAddress.selector);
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 1, address(0));
+    }
+
+    function test_buyTicketSharesFor_mixesWithSelfBuyAndFills() public {
+        uint256 id1 = _buyTicket();
+
+        // Alice self-buys 40, then gifts 60 to bob => ticket fills with two holders.
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 40);
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 60, bob);
+
+        (uint8 sold, uint8 holders,,) = pot.getTicket(id1);
+        assertEq(sold, 100);
+        assertEq(holders, 2);
+        assertEq(pot.getTicketShares(id1, alice), 40);
+        assertEq(pot.getTicketShares(id1, bob), 60);
+
+        // Active ticket is now full => the next crank is allowed.
+        (,,,, bool canBuy,,) = pot.getState();
+        assertTrue(canBuy);
+    }
+
+    function test_buyTicketSharesFor_appliesSameGuards() public {
+        uint256 id1 = _buyTicket();
+
+        // Oversold: 99 + 2 > 100.
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 99, bob);
+        vm.expectRevert(PennyPot.InvalidCount.selector);
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 2, bob);
+
+        // Wrong expectedTicketId after rollover.
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 1, bob); // fills to 100
+        uint256 id2 = _buyTicket();
+        vm.expectRevert(abi.encodeWithSelector(PennyPot.UnexpectedTicket.selector, id2, id1));
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 1, bob);
+
+        // Paused: blocked by whenNotPaused.
+        vm.prank(owner);
+        pot.pause();
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id2, 1, bob);
+    }
+
     // ----- buyTicket: cranking guards --------------------------------
 
     function test_buyTicket_revertsIfActiveStillSelling() public {

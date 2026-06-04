@@ -145,7 +145,9 @@ contract PennyPot is Ownable2Step, Pausable {
     // -----------------------------------------------------------------------
 
     event TicketBought(uint256 indexed drawingId, uint256 indexed ticketId, address caller);
-    event SharesBought(uint256 indexed ticketId, address indexed buyer, uint8 count, uint8 newSold);
+    event SharesBought(
+        uint256 indexed ticketId, address indexed holder, address payer, uint8 count, uint8 newSold
+    );
     event TicketFilled(uint256 indexed ticketId);
     event TicketSettled(uint256 indexed ticketId, uint256 totalWin, uint256 winningsPerShare);
     event WinningsWithdrawn(address indexed user, uint256 amount);
@@ -203,8 +205,8 @@ contract PennyPot is Ownable2Step, Pausable {
     // User-facing writes
     // -----------------------------------------------------------------------
 
-    /// @notice Buy `count` shares of the active ticket. Each share costs 10_000 USDC
-    ///         (0.01 USDC); USDC must be pre-approved.
+    /// @notice Buy `count` shares of the active ticket for yourself. Each share costs
+    ///         10_000 USDC (0.01 USDC); USDC must be pre-approved.
     ///
     /// @param  expectedTicketId The Megapot ticket the caller intends to buy into.
     ///         Reverts if the active ticket has rolled over (filled / drawing closed
@@ -212,6 +214,30 @@ contract PennyPot is Ownable2Step, Pausable {
     /// @param  count            Shares to buy; reverts if it would push the ticket
     ///         past 100 shares.
     function buyTicketShares(uint256 expectedTicketId, uint8 count) external whenNotPaused {
+        _buyShares(expectedTicketId, count, msg.sender);
+    }
+
+    /// @notice Gift `count` shares of the active ticket to `recipient`. Identical to
+    ///         {buyTicketShares}, except the shares are credited to — and become
+    ///         claimable only by — `recipient`, while USDC is still pulled from the
+    ///         caller (the gifter).
+    ///
+    /// @param  expectedTicketId Same rollover guard as {buyTicketShares}.
+    /// @param  count            Shares to buy; reverts if it would push the ticket
+    ///         past 100 shares.
+    /// @param  recipient        Address that will own the shares. Must be non-zero.
+    function buyTicketSharesFor(uint256 expectedTicketId, uint8 count, address recipient)
+        external
+        whenNotPaused
+    {
+        if (recipient == address(0)) revert ZeroAddress();
+        _buyShares(expectedTicketId, count, recipient);
+    }
+
+    /// @dev Shared share-purchase logic. `holder` is credited the shares; USDC is
+    ///      always pulled from `msg.sender` (the payer), so a gifter funds a friend's
+    ///      shares. All selling-window / capacity guards live here.
+    function _buyShares(uint256 expectedTicketId, uint8 count, address holder) internal {
         if (count == 0) revert InvalidCount();
 
         uint256 active = activeTicketId;
@@ -223,16 +249,18 @@ contract PennyPot is Ownable2Step, Pausable {
         if (newSold > SHARES_PER_TICKET) revert InvalidCount();
 
         uint256 cost = uint256(count) * SHARE_PRICE;
-        // Pull USDC from buyer to this contract; share proceeds replenish the reserve.
+        // Pull USDC from the payer (msg.sender) to this contract; proceeds replenish
+        // the reserve. `holder` — which differs from the payer when gifting — is the
+        // address credited the shares.
         if (!USDC.transferFrom(msg.sender, address(this), cost)) revert ApprovalFailed();
         reservePool += cost;
 
         soldOf[active] = uint8(newSold);
         // Record a new holder on their first share of this ticket (bounded to 100).
-        if (sharesOf[active][msg.sender] == 0) ticketHolders[active].push(msg.sender);
-        sharesOf[active][msg.sender] += count;
+        if (sharesOf[active][holder] == 0) ticketHolders[active].push(holder);
+        sharesOf[active][holder] += count;
 
-        emit SharesBought(active, msg.sender, count, uint8(newSold));
+        emit SharesBought(active, holder, msg.sender, count, uint8(newSold));
         if (newSold == SHARES_PER_TICKET) emit TicketFilled(active);
     }
 
