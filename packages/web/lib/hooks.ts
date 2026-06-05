@@ -131,6 +131,7 @@ export function useClaimable(user?: Address) {
 export type Position = {
   ticketId: bigint;
   shares: number; // sum of buyer's share count across all SharesBought events
+  block: bigint; // block of the user's first share purchase — the purchase-order key
 };
 
 export function useUserPositions(user?: Address) {
@@ -157,15 +158,25 @@ export function useUserPositions(user?: Address) {
         fromBlock: PENNYPOT_DEPLOY_BLOCK,
         toBlock: "latest",
       });
-      const byTicket = new Map<bigint, number>();
+      // Megapot ticket IDs are random 256-bit values (NOT sequential), so they
+      // can't order tickets by recency. Key purchase-order off the block of the
+      // user's first share purchase on each ticket instead.
+      const byTicket = new Map<bigint, { shares: number; block: bigint }>();
       for (const l of logs) {
         const tid = l.args.ticketId as bigint;
         const cnt = Number(l.args.count as number);
-        byTicket.set(tid, (byTicket.get(tid) ?? 0) + cnt);
+        const blk = l.blockNumber ?? 0n;
+        const ex = byTicket.get(tid);
+        if (ex) {
+          ex.shares += cnt;
+          if (blk < ex.block) ex.block = blk; // earliest purchase = the buy-in time
+        } else {
+          byTicket.set(tid, { shares: cnt, block: blk });
+        }
       }
       return Array.from(byTicket.entries())
-        .map(([ticketId, shares]) => ({ ticketId, shares }))
-        .sort((a, b) => (a.ticketId < b.ticketId ? 1 : -1)); // newest first
+        .map(([ticketId, v]) => ({ ticketId, shares: v.shares, block: v.block }))
+        .sort((a, b) => (a.block < b.block ? 1 : a.block > b.block ? -1 : 0)); // newest first
     },
   });
   return {

@@ -120,6 +120,7 @@ export function Positions() {
       return {
         ticketId: p.ticketId,
         shares: p.shares,
+        block: p.block,
         drawing,
         drawingTime: ds?.drawingTime,
         active,
@@ -131,7 +132,8 @@ export function Positions() {
       const da = a.drawing ?? 0n;
       const db = b.drawing ?? 0n;
       if (da !== db) return db > da ? 1 : -1; // newest drawing first
-      return b.ticketId > a.ticketId ? 1 : -1; // then newest ticket (purchase order)
+      // Megapot ticket IDs are random, so order by purchase block (newest first).
+      return b.block > a.block ? 1 : a.block > b.block ? -1 : 0;
     });
 
   const activeRows = rows.filter((r) => r.active);
