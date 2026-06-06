@@ -140,10 +140,12 @@ export function Positions() {
 
   const activeRows = rows.filter((r) => r.active);
   const activeShares = activeRows.reduce((s, r) => s + r.shares, 0);
-  const claimableAmt = claimable.data ?? 0n;
+  const winningsAmt = claimable.data ?? 0n;
+  const feesAmt = feesClaimable.data ?? 0n;
+  // Winnings and referral fees are two on-chain balances but one user-facing
+  // "Claimable" total; the Claim button withdraws whichever are non-zero.
+  const claimableAmt = winningsAmt + feesAmt;
   const hasClaimable = claimableAmt > 0n;
-  const feesClaimableAmt = feesClaimable.data ?? 0n;
-  const hasFeesClaimable = feesClaimableAmt > 0n;
 
   const [filter, setFilter] = useState<"Active" | "All">("Active");
   const shown = filter === "All" ? rows : activeRows;
@@ -155,44 +157,60 @@ export function Positions() {
   const publicClient = usePublicClient({ chainId: base.id });
   const { writeContractAsync } = useWriteContract();
   const [withdrawing, setWithdrawing] = useState(false);
-  const [feesWithdrawing, setFeesWithdrawing] = useState(false);
+
+  // Withdraw one on-chain balance and block-anchor-poll until it clears (defeats
+  // RPC node lag). `fn` is the withdraw call, `readFn` the matching balance read.
+  async function withdrawAndConfirm(
+    fn: "withdraw" | "withdrawFees",
+    readFn: "balance" | "pendingFees",
+    amount: bigint,
+    toastId: string | number,
+  ) {
+    if (!publicClient || !address) return;
+    const hash = await writeContractAsync({
+      address: PENNYPOT_ADDRESS,
+      abi: pennypotAbi,
+      functionName: fn,
+    });
+    toast.loading(`Waiting for claim to confirm on-chain…`, { id: toastId });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    for (let i = 0; i < 12; i++) {
+      try {
+        const newBalance = (await publicClient.readContract({
+          address: PENNYPOT_ADDRESS,
+          abi: pennypotAbi,
+          functionName: readFn,
+          args: [address],
+          blockNumber: receipt.blockNumber,
+        })) as bigint;
+        if (newBalance < amount) break;
+      } catch {
+        // RPC behind on this block — wait and retry.
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
 
   async function doClaim() {
     if (!publicClient || !address) return;
-    const amount = claimableAmt;
+    const total = claimableAmt;
+    if (total === 0n) return;
     setWithdrawing(true);
     const toastId = toast.loading(
-      `Claiming ${formatUsdc(amount)}… (confirm in wallet)`,
+      `Claiming ${formatUsdc(total)}… (confirm in wallet)`,
     );
     try {
-      const hash = await writeContractAsync({
-        address: PENNYPOT_ADDRESS,
-        abi: pennypotAbi,
-        functionName: "withdraw",
-      });
-      toast.loading(`Waiting for claim to confirm on-chain…`, { id: toastId });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-      // Anchor the post-tx read to the receipt's block so RPC node lag can't
-      // serve stale data — poll up to ~6s until we observe the cleared balance.
-      for (let i = 0; i < 12; i++) {
-        try {
-          const newBalance = (await publicClient.readContract({
-            address: PENNYPOT_ADDRESS,
-            abi: pennypotAbi,
-            functionName: "balance",
-            args: [address],
-            blockNumber: receipt.blockNumber,
-          })) as bigint;
-          if (newBalance < amount) break;
-        } catch {
-          // RPC behind on this block — wait and retry.
-        }
-        await new Promise((r) => setTimeout(r, 500));
+      // Winnings and referral fees are separate contract calls — fire whichever
+      // are non-zero, in sequence (each prompts its own wallet confirmation).
+      if (winningsAmt > 0n) {
+        await withdrawAndConfirm("withdraw", "balance", winningsAmt, toastId);
+      }
+      if (feesAmt > 0n) {
+        await withdrawAndConfirm("withdrawFees", "pendingFees", feesAmt, toastId);
       }
 
       queryClient.invalidateQueries();
-      toast.success(`Claimed ${formatUsdc(amount)}`, {
+      toast.success(`Claimed ${formatUsdc(total)}`, {
         id: toastId,
         description: `Sent to your wallet on Base.`,
         duration: 6000,
@@ -206,60 +224,6 @@ export function Positions() {
       });
     } finally {
       setWithdrawing(false);
-    }
-  }
-
-  async function doClaimFees() {
-    if (!publicClient || !address) return;
-    const amount = feesClaimableAmt;
-    setFeesWithdrawing(true);
-    const toastId = toast.loading(
-      `Claiming ${formatUsdc(amount)} in fees… (confirm in wallet)`,
-    );
-    try {
-      const hash = await writeContractAsync({
-        address: PENNYPOT_ADDRESS,
-        abi: pennypotAbi,
-        functionName: "withdrawFees",
-      });
-      toast.loading(`Waiting for claim to confirm on-chain…`, { id: toastId });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-      // Block-anchored poll until the fee balance clears (defeats RPC lag).
-      for (let i = 0; i < 12; i++) {
-        try {
-          const newBalance = (await publicClient.readContract({
-            address: PENNYPOT_ADDRESS,
-            abi: pennypotAbi,
-            functionName: "pendingFees",
-            args: [address],
-            blockNumber: receipt.blockNumber,
-          })) as bigint;
-          if (newBalance < amount) break;
-        } catch {
-          // RPC behind on this block — wait and retry.
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      queryClient.invalidateQueries();
-      toast.success(`Claimed ${formatUsdc(amount)} in fees`, {
-        id: toastId,
-        description: `Sent to your wallet on Base.`,
-        duration: 6000,
-      });
-    } catch (e) {
-      const msg = (e as Error).message.split("\n")[0];
-      const userRejected = /reject|denied|user/i.test(msg);
-      toast.error(
-        userRejected ? "Wallet rejected the request" : "Fee claim failed",
-        {
-          id: toastId,
-          description: userRejected ? undefined : msg.slice(0, 180),
-        },
-      );
-    } finally {
-      setFeesWithdrawing(false);
     }
   }
 
@@ -283,41 +247,20 @@ export function Positions() {
                 v={formatUsdc(claimableAmt)}
                 tone={hasClaimable ? "mint" : "dim"}
               />
-              <Stat
-                k="Claimable fees"
-                v={formatUsdc(feesClaimableAmt)}
-                tone={hasFeesClaimable ? "mint" : "dim"}
-              />
-              <div className="ml-auto flex items-center gap-3">
-                {hasFeesClaimable ? (
-                  <button
-                    type="button"
-                    onClick={doClaimFees}
-                    disabled={feesWithdrawing || wrongChain}
-                    className="rounded-[9px] border border-[#37d9a4] bg-[#37d9a4] px-6 py-[11px] font-mono text-[13px] font-bold text-[#10000a] transition hover:shadow-[0_4px_16px_rgba(55,217,164,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {feesWithdrawing
-                      ? "claiming…"
-                      : wrongChain
-                        ? "switch to Base"
-                        : "Claim Fees"}
-                  </button>
-                ) : null}
-                {hasClaimable ? (
-                  <button
-                    type="button"
-                    onClick={doClaim}
-                    disabled={withdrawing || wrongChain}
-                    className="rounded-[9px] border border-ink-500 bg-accent px-6 py-[11px] font-mono text-[13px] font-bold text-[#10000a] transition hover:shadow-[0_4px_16px_rgba(255,45,136,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {withdrawing
-                      ? "claiming…"
-                      : wrongChain
-                        ? "switch to Base"
-                        : "Claim"}
-                  </button>
-                ) : null}
-              </div>
+              {hasClaimable ? (
+                <button
+                  type="button"
+                  onClick={doClaim}
+                  disabled={withdrawing || wrongChain}
+                  className="ml-auto rounded-[9px] border border-ink-500 bg-accent px-6 py-[11px] font-mono text-[13px] font-bold text-[#10000a] transition hover:shadow-[0_4px_16px_rgba(255,45,136,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {withdrawing
+                    ? "claiming…"
+                    : wrongChain
+                      ? "switch to Base"
+                      : "Claim"}
+                </button>
+              ) : null}
             </div>
 
             <div className="my-5 h-px bg-ink-500" />
