@@ -124,7 +124,22 @@ export function useClaimable(user?: Address) {
   });
 }
 
-// User's per-ticket history — derived from SharesBought logs filtered by buyer.
+// Per-user claimable referral fees (Positions "Claim Fees" amount). Mirrors
+// useClaimable but reads pendingFees, credited per round by the keeper's
+// snapshotRoundFees → creditRoundFees cycle.
+export function useFeesClaimable(user?: Address) {
+  return useReadContract({
+    chainId: base.id,
+    address: PENNYPOT_ADDRESS,
+    abi: pennypotAbi,
+    functionName: "pendingFees",
+    args: user ? [user] : undefined,
+    query: { enabled: Boolean(user), refetchInterval: 15_000 },
+  });
+}
+
+// User's per-ticket history — derived from SharesBought logs filtered by holder
+// (the share owner; gifted positions surface for the recipient).
 // (No on-chain "tickets I've ever bought into" enumeration; this is the canonical
 // off-chain replay path.) Backed by react-query so it gets refreshed by the same
 // queryClient.invalidateQueries() call that refreshes wagmi reads on tx success.
@@ -149,12 +164,13 @@ export function useUserPositions(user?: Address) {
           name: "SharesBought",
           inputs: [
             { name: "ticketId", type: "uint256", indexed: true },
-            { name: "buyer", type: "address", indexed: true },
+            { name: "holder", type: "address", indexed: true },
+            { name: "payer", type: "address", indexed: false },
             { name: "count", type: "uint8", indexed: false },
             { name: "newSold", type: "uint8", indexed: false },
           ],
         },
-        args: { buyer: user },
+        args: { holder: user },
         fromBlock: PENNYPOT_DEPLOY_BLOCK,
         toBlock: "latest",
       });

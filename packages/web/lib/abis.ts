@@ -164,6 +164,20 @@ export const pennypotAbi = [
     inputs: [],
     outputs: [],
   },
+  {
+    type: "function",
+    name: "withdrawFees",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "pendingFees",
+    stateMutability: "view",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 
   // ---- events -------------------------------------------------------------
   {
@@ -171,7 +185,8 @@ export const pennypotAbi = [
     name: "SharesBought",
     inputs: [
       { name: "ticketId", type: "uint256", indexed: true },
-      { name: "buyer", type: "address", indexed: true },
+      { name: "holder", type: "address", indexed: true },
+      { name: "payer", type: "address", indexed: false },
       { name: "count", type: "uint8", indexed: false },
       { name: "newSold", type: "uint8", indexed: false },
     ],

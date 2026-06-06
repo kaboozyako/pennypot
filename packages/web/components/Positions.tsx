@@ -20,6 +20,7 @@ import {
 import { formatUsdc } from "@/lib/format";
 import {
   useClaimable,
+  useFeesClaimable,
   useGetState,
   useMegapotContractTickets,
   useUserPositions,
@@ -36,6 +37,7 @@ export function Positions() {
   const wrongChain = !!address && chainId !== base.id;
   const queryClient = useQueryClient();
   const claimable = useClaimable(address);
+  const feesClaimable = useFeesClaimable(address);
   const { data: gs } = useGetState();
   const currentDrawingId = gs?.[0];
   const { positions, loading, error } = useUserPositions(address);
@@ -140,6 +142,8 @@ export function Positions() {
   const activeShares = activeRows.reduce((s, r) => s + r.shares, 0);
   const claimableAmt = claimable.data ?? 0n;
   const hasClaimable = claimableAmt > 0n;
+  const feesClaimableAmt = feesClaimable.data ?? 0n;
+  const hasFeesClaimable = feesClaimableAmt > 0n;
 
   const [filter, setFilter] = useState<"Active" | "All">("Active");
   const shown = filter === "All" ? rows : activeRows;
@@ -151,6 +155,7 @@ export function Positions() {
   const publicClient = usePublicClient({ chainId: base.id });
   const { writeContractAsync } = useWriteContract();
   const [withdrawing, setWithdrawing] = useState(false);
+  const [feesWithdrawing, setFeesWithdrawing] = useState(false);
 
   async function doClaim() {
     if (!publicClient || !address) return;
@@ -204,6 +209,60 @@ export function Positions() {
     }
   }
 
+  async function doClaimFees() {
+    if (!publicClient || !address) return;
+    const amount = feesClaimableAmt;
+    setFeesWithdrawing(true);
+    const toastId = toast.loading(
+      `Claiming ${formatUsdc(amount)} in fees… (confirm in wallet)`,
+    );
+    try {
+      const hash = await writeContractAsync({
+        address: PENNYPOT_ADDRESS,
+        abi: pennypotAbi,
+        functionName: "withdrawFees",
+      });
+      toast.loading(`Waiting for claim to confirm on-chain…`, { id: toastId });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+      // Block-anchored poll until the fee balance clears (defeats RPC lag).
+      for (let i = 0; i < 12; i++) {
+        try {
+          const newBalance = (await publicClient.readContract({
+            address: PENNYPOT_ADDRESS,
+            abi: pennypotAbi,
+            functionName: "pendingFees",
+            args: [address],
+            blockNumber: receipt.blockNumber,
+          })) as bigint;
+          if (newBalance < amount) break;
+        } catch {
+          // RPC behind on this block — wait and retry.
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      queryClient.invalidateQueries();
+      toast.success(`Claimed ${formatUsdc(amount)} in fees`, {
+        id: toastId,
+        description: `Sent to your wallet on Base.`,
+        duration: 6000,
+      });
+    } catch (e) {
+      const msg = (e as Error).message.split("\n")[0];
+      const userRejected = /reject|denied|user/i.test(msg);
+      toast.error(
+        userRejected ? "Wallet rejected the request" : "Fee claim failed",
+        {
+          id: toastId,
+          description: userRejected ? undefined : msg.slice(0, 180),
+        },
+      );
+    } finally {
+      setFeesWithdrawing(false);
+    }
+  }
+
   return (
     <section className="relative z-10 mx-auto w-full max-w-3xl px-4 py-6">
       <h2 className="mb-3 px-1 font-mono text-xs uppercase tracking-[0.25em] text-ink-300">
@@ -224,20 +283,41 @@ export function Positions() {
                 v={formatUsdc(claimableAmt)}
                 tone={hasClaimable ? "mint" : "dim"}
               />
-              {hasClaimable ? (
-                <button
-                  type="button"
-                  onClick={doClaim}
-                  disabled={withdrawing || wrongChain}
-                  className="ml-auto rounded-[9px] border border-ink-500 bg-accent px-6 py-[11px] font-mono text-[13px] font-bold text-[#10000a] transition hover:shadow-[0_4px_16px_rgba(255,45,136,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {withdrawing
-                    ? "claiming…"
-                    : wrongChain
-                      ? "switch to Base"
-                      : "Claim"}
-                </button>
-              ) : null}
+              <Stat
+                k="Claimable fees"
+                v={formatUsdc(feesClaimableAmt)}
+                tone={hasFeesClaimable ? "mint" : "dim"}
+              />
+              <div className="ml-auto flex items-center gap-3">
+                {hasFeesClaimable ? (
+                  <button
+                    type="button"
+                    onClick={doClaimFees}
+                    disabled={feesWithdrawing || wrongChain}
+                    className="rounded-[9px] border border-[#37d9a4] bg-[#37d9a4] px-6 py-[11px] font-mono text-[13px] font-bold text-[#10000a] transition hover:shadow-[0_4px_16px_rgba(55,217,164,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {feesWithdrawing
+                      ? "claiming…"
+                      : wrongChain
+                        ? "switch to Base"
+                        : "Claim Fees"}
+                  </button>
+                ) : null}
+                {hasClaimable ? (
+                  <button
+                    type="button"
+                    onClick={doClaim}
+                    disabled={withdrawing || wrongChain}
+                    className="rounded-[9px] border border-ink-500 bg-accent px-6 py-[11px] font-mono text-[13px] font-bold text-[#10000a] transition hover:shadow-[0_4px_16px_rgba(255,45,136,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {withdrawing
+                      ? "claiming…"
+                      : wrongChain
+                        ? "switch to Base"
+                        : "Claim"}
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <div className="my-5 h-px bg-ink-500" />
