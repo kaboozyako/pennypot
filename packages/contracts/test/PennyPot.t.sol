@@ -28,7 +28,7 @@ contract PennyPotTest is Test {
         usdc = new MockUSDC();
         jackpot = new MockJackpot(address(usdc), 1_000_000, DRAWING_DURATION);
         buyer = new MockRandomTicketBuyer(address(usdc), address(jackpot));
-        pot = new PennyPot(address(usdc), address(jackpot), address(buyer), feeReceiver, owner);
+        pot = new PennyPot(address(usdc), address(jackpot), address(buyer), owner);
 
         // Seed the reserve (owner-only). depositReserve pulls USDC from the owner.
         usdc.mint(owner, SEED_RESERVE);
@@ -73,22 +73,27 @@ contract PennyPotTest is Test {
 
     function test_constructor_reverts_on_zero_addresses() public {
         vm.expectRevert(PennyPot.ZeroAddress.selector);
-        new PennyPot(address(0), address(jackpot), address(buyer), feeReceiver, owner);
+        new PennyPot(address(0), address(jackpot), address(buyer), owner);
         vm.expectRevert(PennyPot.ZeroAddress.selector);
-        new PennyPot(address(usdc), address(0), address(buyer), feeReceiver, owner);
+        new PennyPot(address(usdc), address(0), address(buyer), owner);
         vm.expectRevert(PennyPot.ZeroAddress.selector);
-        new PennyPot(address(usdc), address(jackpot), address(0), feeReceiver, owner);
-        vm.expectRevert(PennyPot.ZeroAddress.selector);
-        new PennyPot(address(usdc), address(jackpot), address(buyer), address(0), owner);
+        new PennyPot(address(usdc), address(jackpot), address(0), owner);
         // Zero owner is rejected by OZ Ownable, not our ZeroAddress check.
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
-        new PennyPot(address(usdc), address(jackpot), address(buyer), feeReceiver, address(0));
+        new PennyPot(address(usdc), address(jackpot), address(buyer), address(0));
     }
 
-    function test_constructor_reverts_if_feeReceiver_equals_contract() public view {
-        // The future contract address is hard to pre-compute here; assert the invariant
-        // holds for the deployed instance.
-        assertTrue(pot.feeReceiver() != address(pot));
+    function test_selfReferrer_accruesToPennyPot() public {
+        // PennyPot refers its own ticket (recipient == referrer == PennyPot). Megapot allows
+        // this (verified on-chain), so buyTicket succeeds and referral fees accrue to PennyPot.
+        uint256 id1 = _buyTicket();
+        assertTrue(id1 != 0);
+        // Simulate Megapot accruing PennyPot's referral fee, then PennyPot sweeps it in.
+        jackpot.accrueReferral(address(pot), 80_000);
+        usdc.mint(address(jackpot), 80_000);
+        uint256 swept = pot.sweepReferralFees();
+        assertEq(swept, 80_000);
+        assertEq(pot.feePool(), 80_000);
     }
 
     // ----- Happy path: full ticket, no winnings --------------------------
@@ -692,5 +697,219 @@ contract PennyPotTest is Test {
         assertEq(shareCounts[0], 40);
         assertEq(holders[1], bob);
         assertEq(shareCounts[1], 20);
+    }
+
+    // ----- Referral fees: pool ÷ total shares ----------------------------------
+
+    /// @dev Simulate Megapot accruing referral fees to PennyPot (its own referrer), fund the
+    ///      jackpot to cover the payout, then sweep them into PennyPot's feePool.
+    function _accrueAndSweep(uint256 amount) internal {
+        jackpot.accrueReferral(address(pot), amount);
+        usdc.mint(address(jackpot), amount);
+        pot.sweepReferralFees();
+    }
+
+    /// @dev Warp past the active deadline and settle the current drawing on Megapot,
+    ///      advancing currentDrawingId so the prior round can be snapshotted.
+    function _closeRound() internal {
+        vm.warp(block.timestamp + DRAWING_DURATION + 1);
+        jackpot.settleDrawing();
+    }
+
+    function test_referral_sweepRoutesUsdcIntoFeePool() public {
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+
+        assertEq(pot.feePool(), 0);
+        _accrueAndSweep(1_000_000); // 1 USDC of referral
+        assertEq(pot.feePool(), 1_000_000);
+        assertEq(jackpot.referralFees(address(pot)), 0); // drained from Megapot
+    }
+
+    function test_referral_poolDividedByTotalShares() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 25);
+        vm.prank(bob);
+        pot.buyTicketShares(id1, 75);
+
+        _accrueAndSweep(1_000_000); // 1 USDC over 100 shares -> 10_000 / share
+        _closeRound();
+
+        pot.snapshotRoundFees(d);
+        assertEq(pot.roundFeePerShare(d), 10_000);
+        pot.creditRoundFees(_ids(id1));
+
+        assertEq(pot.pendingFees(alice), 250_000);
+        assertEq(pot.pendingFees(bob), 750_000);
+
+        uint256 aliceBefore = usdc.balanceOf(alice);
+        vm.prank(alice);
+        pot.withdrawFees();
+        assertEq(usdc.balanceOf(alice) - aliceBefore, 250_000);
+
+        // Double-withdraw reverts.
+        vm.expectRevert(PennyPot.NothingToWithdraw.selector);
+        vm.prank(alice);
+        pot.withdrawFees();
+    }
+
+    function test_referral_undersoldConcentratesPerShare() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 10); // only 10 of 100 shares sold
+
+        _accrueAndSweep(1_000_000);
+        _closeRound();
+
+        pot.snapshotRoundFees(d);
+        assertEq(pot.roundFeePerShare(d), 100_000); // 1_000_000 / 10
+        pot.creditRoundFees(_ids(id1));
+        assertEq(pot.pendingFees(alice), 1_000_000);
+    }
+
+    function test_referral_nonParticipantGetsNothing() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+        _accrueAndSweep(1_000_000);
+        _closeRound();
+        pot.snapshotRoundFees(d);
+        pot.creditRoundFees(_ids(id1));
+
+        assertEq(pot.pendingFees(carol), 0);
+        vm.expectRevert(PennyPot.NothingToWithdraw.selector);
+        vm.prank(carol);
+        pot.withdrawFees();
+    }
+
+    function test_referral_giftedHolderEarnsFees_notGifter() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketSharesFor(id1, 40, bob); // alice pays, bob holds
+
+        _accrueAndSweep(1_000_000); // 40 shares -> 25_000 / share
+        _closeRound();
+        pot.snapshotRoundFees(d);
+        pot.creditRoundFees(_ids(id1));
+
+        assertEq(pot.pendingFees(bob), 1_000_000);
+        assertEq(pot.pendingFees(alice), 0);
+    }
+
+    function test_referral_snapshotRevertsWhileRoundOpen() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+        _accrueAndSweep(1_000_000);
+        // Round still open (== currentDrawingId).
+        vm.expectRevert(PennyPot.RoundNotClosed.selector);
+        pot.snapshotRoundFees(d);
+    }
+
+    function test_referral_snapshotAndCredit_idempotent() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+        vm.prank(bob);
+        pot.buyTicketShares(id1, 50);
+        _accrueAndSweep(1_000_000); // 100 shares -> 10_000 / share
+        _closeRound();
+
+        pot.snapshotRoundFees(d);
+        vm.expectRevert(PennyPot.AlreadySnapshotted.selector);
+        pot.snapshotRoundFees(d);
+
+        pot.creditRoundFees(_ids(id1));
+        assertEq(pot.pendingFees(alice), 500_000);
+        // Crediting the same ticket again is a no-op (no double credit).
+        pot.creditRoundFees(_ids(id1));
+        assertEq(pot.pendingFees(alice), 500_000);
+    }
+
+    function test_referral_creditRevertsIfNotSnapshotted() public {
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+        vm.expectRevert(PennyPot.NotSnapshotted.selector);
+        pot.creditRoundFees(_ids(id1));
+    }
+
+    function test_referral_sweep_zeroBalanceIsNoop() public {
+        // No referral accrued -> sweepReferralFees must NOT revert, even though Megapot's
+        // claimReferralFees reverts on a zero balance (PennyPot guards it).
+        uint256 swept = pot.sweepReferralFees();
+        assertEq(swept, 0);
+        assertEq(pot.feePool(), 0);
+    }
+
+    function test_referral_solvency_feesNeverExceedSwept() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 30);
+        vm.prank(bob);
+        pot.buyTicketShares(id1, 20);
+
+        _accrueAndSweep(777_777); // odd amount -> per-share dust
+        _closeRound();
+        pot.snapshotRoundFees(d);
+        pot.creditRoundFees(_ids(id1));
+
+        uint256 sumFees = pot.pendingFees(alice) + pot.pendingFees(bob);
+        // perShare = 777_777 / 50 = 15_555; distributed = 777_750; dust 27 stays in feePool.
+        assertEq(pot.roundFeePerShare(d), 15_555);
+        assertEq(pot.feePool(), 27);
+        assertLe(sumFees, 777_777);
+        // Solvency: contract USDC covers reserve + winnings + fees (dust is surplus).
+        assertGe(
+            usdc.balanceOf(address(pot)),
+            pot.reservePool() + pot.claimable(alice) + pot.claimable(bob) + sumFees
+        );
+    }
+
+    function test_referral_pauseDoesNotBlockFeeFlow() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+        vm.prank(bob);
+        pot.buyTicketShares(id1, 50);
+        _accrueAndSweep(1_000_000); // 100 shares -> 10_000 / share
+        _closeRound();
+
+        vm.prank(owner);
+        pot.pause();
+
+        // Fee snapshot / credit / withdraw all work while paused.
+        pot.snapshotRoundFees(d);
+        pot.creditRoundFees(_ids(id1));
+        assertEq(pot.pendingFees(alice), 500_000);
+        uint256 before = usdc.balanceOf(alice);
+        vm.prank(alice);
+        pot.withdrawFees();
+        assertEq(usdc.balanceOf(alice) - before, 500_000);
+    }
+
+    function test_referral_ownerWithdrawReserveCannotTouchFeePool() public {
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+        _accrueAndSweep(1_000_000);
+
+        // Reserve is back to seed (share purchase replenished it); feePool holds the fees.
+        assertEq(pot.feePool(), 1_000_000);
+        // Owner can only pull up to reservePool, never the fee USDC on top of it.
+        uint256 r = pot.reservePool();
+        vm.prank(owner);
+        vm.expectRevert(PennyPot.InsufficientReserve.selector);
+        pot.withdrawReserve(r + 1, owner);
     }
 }
