@@ -192,6 +192,7 @@ contract PennyPot is Ownable2Step, Pausable {
     error InsufficientReserve();
     error ApprovalFailed();
     error RoundNotClosed();
+    error RoundNotSettled();
     error AlreadySnapshotted();
     error NotSnapshotted();
 
@@ -411,7 +412,12 @@ contract PennyPot is Ownable2Step, Pausable {
     ///         since PennyPot refers its own tickets) into `feePool`, to be distributed to
     ///         shareholders. Permissionless; a no-op (returns 0) when nothing has accrued —
     ///         this guards the zero-balance case, since Megapot's claimReferralFees reverts on it.
-    function sweepReferralFees() external returns (uint256 swept) {
+    ///         `snapshotRoundFees` also calls this internally, so an explicit sweep is optional.
+    function sweepReferralFees() public returns (uint256 swept) {
+        return _sweepReferralFees();
+    }
+
+    function _sweepReferralFees() internal returns (uint256 swept) {
         if (JACKPOT.referralFees(address(this)) == 0) return 0;
         uint256 before = USDC.balanceOf(address(this));
         JACKPOT.claimReferralFees();
@@ -422,10 +428,14 @@ contract PennyPot is Ownable2Step, Pausable {
 
     /// @notice Fix a round's referral fee-per-share = feePool / (total shares sold in the
     ///         round), and DRAIN that amount from feePool (dust stays, rolls forward).
-    ///         Permissionless. The round must be closed (its drawing has advanced) so its
-    ///         share counts are final, and can only be snapshotted once.
-    /// @dev    Pair with `sweepReferralFees()` immediately before, so feePool holds exactly
-    ///         this round's fees (see README — keeper runs one sweep+snapshot per round).
+    ///         Permissionless, once per round. Requires the round to be closed (its drawing
+    ///         has advanced, so share counts are final) AND fully settled (every ticket
+    ///         claimWinnings'd, so all of its win shares have accrued). Sweeps fresh referral
+    ///         fees in before computing the rate.
+    /// @dev    The settled-requirement + internal sweep make this order-independent and
+    ///         front-run-safe: an early/premature caller either reverts (round not settled)
+    ///         or sweeps the round's real fees itself — it can never lock the rate at a stale
+    ///         (e.g. zero) feePool and strand the round's shareholders.
     function snapshotRoundFees(uint256 drawingId) external {
         if (drawingId >= JACKPOT.currentDrawingId()) revert RoundNotClosed();
         if (roundSnapshotted[drawingId]) revert AlreadySnapshotted();
@@ -433,8 +443,15 @@ contract PennyPot is Ownable2Step, Pausable {
         uint256[] storage ids = drawingTickets[drawingId];
         uint256 totalShares;
         for (uint256 i = 0; i < ids.length; i++) {
+            // Every ticket must be settled first, so all win shares for the round have
+            // accrued to PennyPot before we sweep + lock the rate.
+            if (!claimedOf[ids[i]]) revert RoundNotSettled();
             totalShares += soldOf[ids[i]];
         }
+
+        // Pull any accrued referral (this round's purchase fees + win shares) into the pool
+        // before computing the rate, so it reflects real funds regardless of sweep timing.
+        _sweepReferralFees();
 
         uint256 perShare = totalShares > 0 ? feePool / totalShares : 0;
         roundFeePerShare[drawingId] = perShare;

@@ -709,11 +709,13 @@ contract PennyPotTest is Test {
         pot.sweepReferralFees();
     }
 
-    /// @dev Warp past the active deadline and settle the current drawing on Megapot,
-    ///      advancing currentDrawingId so the prior round can be snapshotted.
-    function _closeRound() internal {
+    /// @dev Warp past the active deadline, settle the current drawing on Megapot (advancing
+    ///      currentDrawingId), and settle the round's tickets via claimWinnings — which
+    ///      snapshotRoundFees now requires (so all win shares have accrued first).
+    function _closeRound(uint256[] memory ids) internal {
         vm.warp(block.timestamp + DRAWING_DURATION + 1);
         jackpot.settleDrawing();
+        pot.claimWinnings(ids);
     }
 
     function test_referral_sweepRoutesUsdcIntoFeePool() public {
@@ -736,7 +738,7 @@ contract PennyPotTest is Test {
         pot.buyTicketShares(id1, 75);
 
         _accrueAndSweep(1_000_000); // 1 USDC over 100 shares -> 10_000 / share
-        _closeRound();
+        _closeRound(_ids(id1));
 
         pot.snapshotRoundFees(d);
         assertEq(pot.roundFeePerShare(d), 10_000);
@@ -763,7 +765,7 @@ contract PennyPotTest is Test {
         pot.buyTicketShares(id1, 10); // only 10 of 100 shares sold
 
         _accrueAndSweep(1_000_000);
-        _closeRound();
+        _closeRound(_ids(id1));
 
         pot.snapshotRoundFees(d);
         assertEq(pot.roundFeePerShare(d), 100_000); // 1_000_000 / 10
@@ -777,7 +779,7 @@ contract PennyPotTest is Test {
         vm.prank(alice);
         pot.buyTicketShares(id1, 50);
         _accrueAndSweep(1_000_000);
-        _closeRound();
+        _closeRound(_ids(id1));
         pot.snapshotRoundFees(d);
         pot.creditRoundFees(_ids(id1));
 
@@ -794,7 +796,7 @@ contract PennyPotTest is Test {
         pot.buyTicketSharesFor(id1, 40, bob); // alice pays, bob holds
 
         _accrueAndSweep(1_000_000); // 40 shares -> 25_000 / share
-        _closeRound();
+        _closeRound(_ids(id1));
         pot.snapshotRoundFees(d);
         pot.creditRoundFees(_ids(id1));
 
@@ -821,7 +823,7 @@ contract PennyPotTest is Test {
         vm.prank(bob);
         pot.buyTicketShares(id1, 50);
         _accrueAndSweep(1_000_000); // 100 shares -> 10_000 / share
-        _closeRound();
+        _closeRound(_ids(id1));
 
         pot.snapshotRoundFees(d);
         vm.expectRevert(PennyPot.AlreadySnapshotted.selector);
@@ -859,7 +861,7 @@ contract PennyPotTest is Test {
         pot.buyTicketShares(id1, 20);
 
         _accrueAndSweep(777_777); // odd amount -> per-share dust
-        _closeRound();
+        _closeRound(_ids(id1));
         pot.snapshotRoundFees(d);
         pot.creditRoundFees(_ids(id1));
 
@@ -883,7 +885,7 @@ contract PennyPotTest is Test {
         vm.prank(bob);
         pot.buyTicketShares(id1, 50);
         _accrueAndSweep(1_000_000); // 100 shares -> 10_000 / share
-        _closeRound();
+        _closeRound(_ids(id1));
 
         vm.prank(owner);
         pot.pause();
@@ -911,5 +913,52 @@ contract PennyPotTest is Test {
         vm.prank(owner);
         vm.expectRevert(PennyPot.InsufficientReserve.selector);
         pot.withdrawReserve(r + 1, owner);
+    }
+
+    // A premature/front-run snapshot (round closed but tickets not yet settled) must revert,
+    // so it can't lock the round's fee-per-share at a stale (zero) feePool and strand holders.
+    function test_referral_snapshotRevertsIfRoundNotSettled() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+        _accrueAndSweep(1_000_000);
+
+        // Close the drawing on Megapot but do NOT settle the ticket (no claimWinnings yet).
+        vm.warp(block.timestamp + DRAWING_DURATION + 1);
+        jackpot.settleDrawing();
+
+        vm.expectRevert(PennyPot.RoundNotSettled.selector);
+        pot.snapshotRoundFees(d);
+
+        // Once the ticket is settled, the snapshot works and credits the holder correctly.
+        pot.claimWinnings(_ids(id1));
+        pot.snapshotRoundFees(d);
+        pot.creditRoundFees(_ids(id1));
+        assertEq(pot.pendingFees(alice), 1_000_000); // sole holder of 50 shares -> whole pool
+    }
+
+    // snapshotRoundFees pulls accrued referral in itself, so it works even when nobody called
+    // sweepReferralFees first (feePool starts at 0).
+    function test_referral_snapshotSelfSweeps() public {
+        uint256 d = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+        vm.prank(bob);
+        pot.buyTicketShares(id1, 50);
+
+        // Accrue referral in Megapot but never sweep it into feePool.
+        jackpot.accrueReferral(address(pot), 1_000_000);
+        usdc.mint(address(jackpot), 1_000_000);
+        assertEq(pot.feePool(), 0);
+
+        vm.warp(block.timestamp + DRAWING_DURATION + 1);
+        jackpot.settleDrawing();
+        pot.claimWinnings(_ids(id1));
+        pot.snapshotRoundFees(d); // self-sweeps the 1 USDC in
+        assertEq(pot.roundFeePerShare(d), 10_000); // 1_000_000 / 100
+        pot.creditRoundFees(_ids(id1));
+        assertEq(pot.pendingFees(alice), 500_000);
     }
 }

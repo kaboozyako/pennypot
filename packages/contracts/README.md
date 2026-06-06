@@ -112,14 +112,19 @@ Users:
   its own drawing's settlement (via `ticketDrawingId`).
 - `sweepReferralFees()` — claim PennyPot's accrued Megapot referral fees (purchase fees +
   win shares, since PennyPot refers its own tickets) into `feePool`. Permissionless; a no-op
-  (returns 0) when nothing has accrued — guards Megapot's revert-on-zero-balance.
+  (returns 0) when nothing has accrued — guards Megapot's revert-on-zero-balance. Optional:
+  `snapshotRoundFees` sweeps internally too.
 - `snapshotRoundFees(uint256 drawingId)` — fix a closed round's fee-per-share
   (`feePool / total shares sold`) and drain that amount from `feePool`. Once per round.
+  **Requires the round fully settled** (every ticket `claimWinnings`'d, so all win shares have
+  accrued) and **self-sweeps** fresh fees before computing the rate — so it's order-independent
+  and a premature/front-run call can't lock the rate at a stale (zero) `feePool`.
 - `creditRoundFees(uint256[] ticketIds)` — credit each ticket's holders their round fee
   into `feesClaimable`. Batchable; idempotent per ticket.
 
   Keeper cadence per round (hourly, after the round settles, in order):
-  `claimWinnings → sweepReferralFees → snapshotRoundFees → creditRoundFees`.
+  `claimWinnings → snapshotRoundFees → creditRoundFees` (snapshot self-sweeps; an explicit
+  `sweepReferralFees` first is optional).
 
 ### Owner
 
@@ -192,10 +197,10 @@ Then seed the reserve from the owner: `USDC.approve(pennyPot, amount)` then
 - If there's no active ticket, or the active ticket is full, or its drawing window has
   ended (and reserve ≥ $1, and we're > MIN_SELLING_WINDOW from close): call `buyTicket()`.
 - After a drawing settles on Megapot (`winningTicket != 0`): call
-  `claimWinnings(getDrawingTicketIds(drawingId))` to settle that drawing's tickets, then
-  pass its referral fees to holders — `sweepReferralFees()` → `snapshotRoundFees(drawingId)`
-  → `creditRoundFees(getDrawingTicketIds(drawingId))` (chunk the ticket ids if the round is
-  large). Run this once per round, in order.
+  `claimWinnings(getDrawingTicketIds(drawingId))` to settle ALL of that drawing's tickets
+  (required before the snapshot), then pass its referral fees to holders —
+  `snapshotRoundFees(drawingId)` (self-sweeps) → `creditRoundFees(getDrawingTicketIds(drawingId))`
+  (chunk the ticket ids if the round is large). Run this once per round, in order.
 
 ## Testing
 
