@@ -29,8 +29,13 @@ interface IJackpot {
     /// @param _userTicketIds The ticket IDs to claim against.
     function claimWinnings(uint256[] calldata _userTicketIds) external;
 
-    /// @notice Withdraw accrued referral fees to msg.sender.
+    /// @notice Withdraw accrued referral fees to msg.sender. REVERTS (NoReferralFeesToClaim)
+    ///         if the caller's balance is zero — callers must guard with `referralFees`.
     function claimReferralFees() external;
+
+    /// @notice A referrer's accrued, claimable referral balance in USDC (purchase fees +
+    ///         win shares). Public mapping getter on the Jackpot.
+    function referralFees(address referrer) external view returns (uint256);
 
     /// @notice Returns the active drawing ID. The most recent settled drawing is `currentDrawingId() - 1`.
     function currentDrawingId() external view returns (uint256);

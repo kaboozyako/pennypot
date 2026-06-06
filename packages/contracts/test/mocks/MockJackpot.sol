@@ -36,9 +36,8 @@ contract MockJackpot {
     mapping(uint256 => DrawingData) internal drawingsData;
     uint256 internal nextTicketId = 1;
 
-    // Track referral fees accrued per address for `claimReferralFees`.
-    mapping(address => uint256) public referralBalance;
-    uint256 public referralFeeBps = 1_000; // 10%, in basis points
+    // Track referral fees accrued per address (mirrors Megapot's public `referralFees`).
+    mapping(address => uint256) public referralFees;
 
     constructor(address _usdc, uint256 _ticketPrice, uint256 _drawingDuration) {
         usdc = IERC20(_usdc);
@@ -81,11 +80,19 @@ contract MockJackpot {
     }
 
     function claimReferralFees() external {
-        uint256 amount = referralBalance[msg.sender];
-        if (amount > 0) {
-            referralBalance[msg.sender] = 0;
-            require(usdc.transfer(msg.sender, amount), "USDC send failed");
-        }
+        // Megapot reverts (NoReferralFeesToClaim) on a zero balance; mirror that so the
+        // sweepReferralFees zero-guard is actually exercised.
+        uint256 amount = referralFees[msg.sender];
+        require(amount > 0, "NoReferralFeesToClaim");
+        referralFees[msg.sender] = 0;
+        require(usdc.transfer(msg.sender, amount), "USDC send failed");
+    }
+
+    /// @notice Test helper: simulate Megapot accruing referral fees (purchase fee +/or
+    ///         win share) to `referrer`. The contract must be funded with USDC to cover
+    ///         what `claimReferralFees` will later pay out (as tests already do for wins).
+    function accrueReferral(address referrer, uint256 amount) external {
+        referralFees[referrer] += amount;
     }
 
     function getDrawingState(uint256 _drawingId) external view returns (IJackpot.DrawingState memory) {

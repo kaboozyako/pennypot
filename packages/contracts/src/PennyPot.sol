@@ -26,9 +26,10 @@ interface IERC20 {
  *
  *         Each share's payout is `ticketWinnings / sharesActuallySold` — so when a
  *         ticket is undersubscribed, every shareholder's slice grows. The pool keeps
- *         zero winnings. Revenue comes from Megapot's referral fees, accrued at an
- *         operator-owned `feeReceiver` address (set in the constructor; PennyPot
- *         lists it as the referrer on every ticket purchase).
+ *         zero winnings. Megapot's referral fees (per-purchase + per-win) are passed
+ *         through to players: PennyPot lists itself as the referrer, sweeps its accrued
+ *         referral fees from Megapot, and splits each round's fees among that round's
+ *         shareholders by shares.
  *
  * @dev    Drawing *lifecycle* state is intentionally NOT tracked on-chain — drawings
  *         are indexed off-chain, and Megapot itself is the source of truth for whether
@@ -89,11 +90,6 @@ contract PennyPot is Ownable2Step, Pausable {
     ///         through here (the Jackpot itself has no working quick-pick).
     IRandomTicketBuyer public immutable RANDOM_BUYER;
 
-    /// @notice Operator-owned address listed as the referrer on every ticket buy.
-    ///         Earns Megapot's per-ticket referral fee and per-claim win share. Must
-    ///         differ from address(this) — Megapot's buyTickets reverts otherwise.
-    address public immutable feeReceiver;
-
     // -----------------------------------------------------------------------
     // State
     // -----------------------------------------------------------------------
@@ -103,6 +99,12 @@ contract PennyPot is Ownable2Step, Pausable {
 
     /// @notice drawingTime of the active ticket's drawing; share sales close at it.
     uint64 public activeDeadline;
+
+    /// @notice Drawing id of the most recent buyTicket. Enforces that a drawing's referral
+    ///         fees are snapshotted before PennyPot opens the next drawing — Megapot keeps a
+    ///         single aggregate referral balance, so this stops two rounds' fees from
+    ///         commingling and being pulled into the wrong round's snapshot.
+    uint256 public lastDrawingBought;
 
     /// @notice Shares sold per Megapot ticket (0..100).
     mapping(uint256 => uint8) public soldOf;
@@ -140,6 +142,27 @@ contract PennyPot is Ownable2Step, Pausable {
     ///         purchases. Decreases only on buyTicket and owner withdrawals.
     uint256 public reservePool;
 
+    // ---- Referral-fee passthrough ----
+
+    /// @notice USDC swept from Megapot's referral balance, not yet earmarked to a round.
+    ///         Only grows via `sweepReferralFees` (real claimed USDC) and shrinks via
+    ///         `snapshotRoundFees`, so distributed fees can never exceed what was claimed.
+    uint256 public feePool;
+
+    /// @notice Per-user withdrawable referral fees, credited by `creditRoundFees`.
+    ///         Players read `pendingFees(addr)` and pull it all with `withdrawFees()`.
+    mapping(address => uint256) public feesClaimable;
+
+    /// @notice drawingId => USDC referral fee per share for that round, fixed by
+    ///         `snapshotRoundFees` (feePool / total shares sold in the round).
+    mapping(uint256 => uint256) public roundFeePerShare;
+
+    /// @notice drawingId => whether its fee-per-share has been snapshotted (drains feePool).
+    mapping(uint256 => bool) public roundSnapshotted;
+
+    /// @notice ticketId => whether its holders have already been credited their round fee.
+    mapping(uint256 => bool) public ticketFeesCredited;
+
     // -----------------------------------------------------------------------
     // Events
     // -----------------------------------------------------------------------
@@ -153,13 +176,16 @@ contract PennyPot is Ownable2Step, Pausable {
     event WinningsWithdrawn(address indexed user, uint256 amount);
     event ReserveDeposited(address indexed from, uint256 amount, uint256 newReserve);
     event ReserveWithdrawn(address indexed to, uint256 amount, uint256 newReserve);
+    event FeesSwept(uint256 amount, uint256 newFeePool);
+    event RoundFeesSnapshotted(uint256 indexed drawingId, uint256 perShare, uint256 totalShares);
+    event TicketFeesCredited(uint256 indexed ticketId, uint256 perShare);
+    event FeesWithdrawn(address indexed user, uint256 amount);
 
     // -----------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------
 
     error ZeroAddress();
-    error FeeReceiverEqualsContract();
     error InvalidCount();
     error NoActiveTicket();
     error UnexpectedTicket(uint256 active, uint256 expected);
@@ -171,6 +197,11 @@ contract PennyPot is Ownable2Step, Pausable {
     error NothingToWithdraw();
     error InsufficientReserve();
     error ApprovalFailed();
+    error RoundNotClosed();
+    error RoundNotSettled();
+    error AlreadySnapshotted();
+    error NotSnapshotted();
+    error PriorRoundNotSnapshotted(uint256 drawingId);
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -179,22 +210,19 @@ contract PennyPot is Ownable2Step, Pausable {
     /// @param _usdc        Base mainnet USDC address.
     /// @param _jackpot     Megapot Jackpot contract (reads + claims).
     /// @param _randomBuyer Megapot JackpotRandomTicketBuyer (quick-pick purchases).
-    /// @param _feeReceiver Address listed as the referrer on every ticket buy.
-    ///                     MUST be different from address(this).
     /// @param _owner       Operator address with admin powers (reserve mgmt, pause).
     ///                     Zero reverts via OZ Ownable's OwnableInvalidOwner.
-    constructor(address _usdc, address _jackpot, address _randomBuyer, address _feeReceiver, address _owner)
-        Ownable(_owner)
-    {
-        if (_usdc == address(0) || _jackpot == address(0) || _randomBuyer == address(0) || _feeReceiver == address(0)) {
+    /// @dev    PennyPot refers its own tickets (it passes address(this) as the Megapot
+    ///         referrer in buyTicket), so referral fees accrue to PennyPot and are pulled in
+    ///         by sweepReferralFees — no separate referrer wallet/contract to wire.
+    constructor(address _usdc, address _jackpot, address _randomBuyer, address _owner) Ownable(_owner) {
+        if (_usdc == address(0) || _jackpot == address(0) || _randomBuyer == address(0)) {
             revert ZeroAddress();
         }
-        if (_feeReceiver == address(this)) revert FeeReceiverEqualsContract();
 
         USDC = IERC20(_usdc);
         JACKPOT = IJackpot(_jackpot);
         RANDOM_BUYER = IRandomTicketBuyer(_randomBuyer);
-        feeReceiver = _feeReceiver;
 
         // One-time max approval to the random-ticket buyer, which pulls USDC on each buy.
         // (Claims go through the Jackpot and don't pull, so no approval needed there.)
@@ -297,14 +325,27 @@ contract PennyPot is Ownable2Step, Pausable {
         if (ms.ticketPrice != TICKET_PRICE) revert MegapotTicketPriceMismatch(TICKET_PRICE, ms.ticketPrice);
         if (block.timestamp + MIN_SELLING_WINDOW > ms.drawingTime) revert PastSellingWindow();
 
+        // Per-round fee attribution: before opening a NEW drawing, the previous drawing
+        // PennyPot participated in must have its referral fees snapshotted. Megapot keeps one
+        // aggregate referral balance; snapshotting drains it to zero, so gating here ensures
+        // the next round starts with a clean balance and each snapshot captures exactly its
+        // own round's fees. The prior round is already settled (Megapot has advanced), so this
+        // is permissionlessly satisfiable: claimWinnings(prev) -> snapshotRoundFees(prev).
+        uint256 prevDrawing = lastDrawingBought;
+        if (prevDrawing != 0 && prevDrawing != drawingId && !roundSnapshotted[prevDrawing]) {
+            revert PriorRoundNotSnapshotted(prevDrawing);
+        }
+
         // Reserve fronts the ticket cost.
         if (reservePool < TICKET_PRICE) revert ReserveTooLowForTicket(reservePool, TICKET_PRICE);
         reservePool -= TICKET_PRICE;
 
-        // Buy 1 quick-pick via Megapot's random ticket buyer. recipient = this;
-        // referrer = feeReceiver. The buyer picks the numbers and mints the ticket NFT.
+        // Buy 1 quick-pick via Megapot's random ticket buyer. recipient = referrer = this:
+        // PennyPot refers its own ticket, so Megapot accrues the referral fee + win share to
+        // PennyPot's own referral balance, swept back to players via sweepReferralFees.
+        // (Megapot imposes no recipient != referrer constraint — verified on-chain.)
         address[] memory referrers = new address[](1);
-        referrers[0] = feeReceiver;
+        referrers[0] = address(this);
         uint256[] memory split = new uint256[](1);
         split[0] = REFERRAL_SPLIT_FULL;
 
@@ -315,6 +356,7 @@ contract PennyPot is Ownable2Step, Pausable {
         activeDeadline = uint64(ms.drawingTime);
         drawingTickets[drawingId].push(newId);
         ticketDrawingId[newId] = drawingId;
+        lastDrawingBought = drawingId;
 
         emit TicketBought(drawingId, newId, msg.sender);
     }
@@ -375,6 +417,106 @@ contract PennyPot is Ownable2Step, Pausable {
     }
 
     // -----------------------------------------------------------------------
+    // Referral fees (passed through to players)
+    // -----------------------------------------------------------------------
+    //
+    // PennyPot refers its own tickets, so Megapot accrues the per-purchase fee and per-win
+    // share to PennyPot's own referral balance. sweepReferralFees claims them into feePool;
+    // each round's fees are then split among that round's shareholders by shares:
+    // snapshotRoundFees fixes a per-share rate from the pool, creditRoundFees credits each
+    // ticket's holders. feePool is only ever funded by real claims and only debited by what
+    // it holds, so distributed fees can never exceed what was actually claimed.
+
+    /// @notice Claim PennyPot's accrued Megapot referral fees (purchase fees + win shares,
+    ///         since PennyPot refers its own tickets) into `feePool`, to be distributed to
+    ///         shareholders. Permissionless; a no-op (returns 0) when nothing has accrued —
+    ///         this guards the zero-balance case, since Megapot's claimReferralFees reverts on it.
+    ///         `snapshotRoundFees` also calls this internally, so an explicit sweep is optional.
+    function sweepReferralFees() public returns (uint256 swept) {
+        return _sweepReferralFees();
+    }
+
+    function _sweepReferralFees() internal returns (uint256 swept) {
+        if (JACKPOT.referralFees(address(this)) == 0) return 0;
+        uint256 before = USDC.balanceOf(address(this));
+        JACKPOT.claimReferralFees();
+        swept = USDC.balanceOf(address(this)) - before;
+        feePool += swept;
+        emit FeesSwept(swept, feePool);
+    }
+
+    /// @notice Fix a round's referral fee-per-share = feePool / (total shares sold in the
+    ///         round), and DRAIN that amount from feePool (dust stays, rolls forward).
+    ///         Permissionless, once per round. Requires the round to be closed (its drawing
+    ///         has advanced, so share counts are final) AND fully settled (every ticket
+    ///         claimWinnings'd, so all of its win shares have accrued). Sweeps fresh referral
+    ///         fees in before computing the rate.
+    /// @dev    The settled-requirement + internal sweep make this order-independent and
+    ///         front-run-safe: an early/premature caller either reverts (round not settled)
+    ///         or sweeps the round's real fees itself — it can never lock the rate at a stale
+    ///         (e.g. zero) feePool and strand the round's shareholders.
+    function snapshotRoundFees(uint256 drawingId) external {
+        if (drawingId >= JACKPOT.currentDrawingId()) revert RoundNotClosed();
+        if (roundSnapshotted[drawingId]) revert AlreadySnapshotted();
+
+        uint256[] storage ids = drawingTickets[drawingId];
+        uint256 totalShares;
+        for (uint256 i = 0; i < ids.length; i++) {
+            // Every ticket must be settled first, so all win shares for the round have
+            // accrued to PennyPot before we sweep + lock the rate.
+            if (!claimedOf[ids[i]]) revert RoundNotSettled();
+            totalShares += soldOf[ids[i]];
+        }
+
+        // Pull any accrued referral (this round's purchase fees + win shares) into the pool
+        // before computing the rate, so it reflects real funds regardless of sweep timing.
+        _sweepReferralFees();
+
+        uint256 perShare = totalShares > 0 ? feePool / totalShares : 0;
+        roundFeePerShare[drawingId] = perShare;
+        if (perShare > 0) feePool -= perShare * totalShares;
+        roundSnapshotted[drawingId] = true;
+
+        emit RoundFeesSnapshotted(drawingId, perShare, totalShares);
+    }
+
+    /// @notice Credit each given ticket's holders their round fee (shares × per-share),
+    ///         into their withdrawable `feesClaimable`. Permissionless and batchable —
+    ///         pass a round's tickets in chunks to bound gas. Already-credited tickets are
+    ///         skipped; the ticket's round must be snapshotted first.
+    function creditRoundFees(uint256[] calldata ticketIds) external {
+        for (uint256 i = 0; i < ticketIds.length; i++) {
+            uint256 id = ticketIds[i];
+            uint256 drawingId = ticketDrawingId[id];
+            if (!roundSnapshotted[drawingId]) revert NotSnapshotted();
+            if (ticketFeesCredited[id]) continue;
+
+            ticketFeesCredited[id] = true;
+            uint256 perShare = roundFeePerShare[drawingId];
+            if (perShare == 0) continue;
+
+            address[] storage holders = ticketHolders[id];
+            for (uint256 h = 0; h < holders.length; h++) {
+                address holder = holders[h];
+                feesClaimable[holder] += uint256(sharesOf[id][holder]) * perShare;
+            }
+            emit TicketFeesCredited(id, perShare);
+        }
+    }
+
+    /// @notice Withdraw all of the caller's credited referral fees (the "Claim Fees"
+    ///         action). Like {withdraw}, but for the fee balance rather than winnings.
+    function withdrawFees() external {
+        uint256 amount = feesClaimable[msg.sender];
+        if (amount == 0) revert NothingToWithdraw();
+
+        feesClaimable[msg.sender] = 0;
+        if (!USDC.transfer(msg.sender, amount)) revert ApprovalFailed();
+
+        emit FeesWithdrawn(msg.sender, amount);
+    }
+
+    // -----------------------------------------------------------------------
     // Reserve management
     // -----------------------------------------------------------------------
 
@@ -418,8 +560,9 @@ contract PennyPot is Ownable2Step, Pausable {
     // -----------------------------------------------------------------------
 
     /// @notice One-call snapshot for a UI/keeper. `canBuyNextTicket` mirrors
-    ///         buyTicket()'s exact guards (pause, active-ticket-closed, ticket-price
-    ///         match, selling window, reserve) — if it's true, buyTicket() will succeed.
+    ///         buyTicket()'s exact guards (pause, active-ticket-closed, ticket-price match,
+    ///         selling window, reserve, AND the prior-round-snapshotted gate) — if it's true,
+    ///         buyTicket() will succeed.
     /// @return currentDrawingId  Megapot's live drawing id.
     /// @return currentTicketId   The ticket currently selling shares (0 if none).
     /// @return sold              Shares sold on the active ticket (0..100).
@@ -450,8 +593,14 @@ contract PennyPot is Ownable2Step, Pausable {
         isPaused = paused();
 
         bool activeClosed = currentTicketId == 0 || sold == SHARES_PER_TICKET || block.timestamp >= deadline;
+        // Mirror buyTicket's per-round gate: opening a new drawing is blocked until the prior
+        // drawing PennyPot participated in is fee-snapshotted.
+        uint256 prevDrawing = lastDrawingBought;
+        bool priorRoundBlocked =
+            prevDrawing != 0 && prevDrawing != currentDrawingId && !roundSnapshotted[prevDrawing];
         canBuyNextTicket = !isPaused && activeClosed && ms.ticketPrice == TICKET_PRICE
-            && block.timestamp + MIN_SELLING_WINDOW <= ms.drawingTime && reserve >= TICKET_PRICE;
+            && block.timestamp + MIN_SELLING_WINDOW <= ms.drawingTime && reserve >= TICKET_PRICE
+            && !priorRoundBlocked;
     }
 
     /// @notice Megapot ticket ids bought under a drawing, in purchase order.
@@ -485,6 +634,12 @@ contract PennyPot is Ownable2Step, Pausable {
     /// @notice A user's total withdrawable winnings (alias of the `claimable` getter).
     function balance(address user) external view returns (uint256) {
         return claimable[user];
+    }
+
+    /// @notice A user's total withdrawable referral fees (alias of the `feesClaimable`
+    ///         getter) — drives the "Claim Fees" button (shown when > 0).
+    function pendingFees(address user) external view returns (uint256) {
+        return feesClaimable[user];
     }
 
     /// @notice The per-ticket cap table: holder addresses and their share counts (which

@@ -25,12 +25,14 @@ contract MockRandomTicketBuyer {
     function buyTickets(
         uint256 _count,
         address _recipient,
-        address[] calldata _referrers,
+        address[] calldata, /* _referrers */
         uint256[] calldata, /* _referralSplitBps */
         bytes32 /* _source */
     ) external returns (uint256[] memory ids) {
         require(_recipient != address(0), "bad recipient");
-        require(_referrers.length == 0 || _recipient != _referrers[0], "recipient==referrer");
+        // NOTE: Megapot does NOT enforce recipient != referrer (verified on-chain against
+        // both the Jackpot and the JackpotRandomTicketBuyer), so PennyPot referring its own
+        // ticket — recipient == referrer == PennyPot — is allowed.
 
         uint256 total = jackpot.ticketPrice() * _count;
         require(usdc.transferFrom(msg.sender, address(jackpot), total), "USDC pull failed");
