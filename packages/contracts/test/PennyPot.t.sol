@@ -428,7 +428,10 @@ contract PennyPotTest is Test {
         assertTrue(d2 != d1);
 
         // The undersold ticket is closed (deadline passed) => buyTicket rolls into
-        // the new drawing without any on-chain "finalize".
+        // the new drawing. d1's referral fees must be snapshotted before opening d2
+        // (per-round attribution); the round is settled, so this is straightforward.
+        pot.claimWinnings(_ids(id1));
+        pot.snapshotRoundFees(d1);
         uint256 id2 = _buyTicket(); // drawing 2
         assertTrue(id2 != id1);
         vm.prank(bob);
@@ -936,6 +939,29 @@ contract PennyPotTest is Test {
         pot.snapshotRoundFees(d);
         pot.creditRoundFees(_ids(id1));
         assertEq(pot.pendingFees(alice), 1_000_000); // sole holder of 50 shares -> whole pool
+    }
+
+    // Opening a NEW drawing is blocked until the previous drawing's referral fees are
+    // snapshotted — so a later round's fees can't commingle into an older round's snapshot.
+    function test_referral_buyTicketRequiresPriorRoundSnapshotted() public {
+        uint256 d1 = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+
+        // Close d1 and advance Megapot to d2.
+        vm.warp(block.timestamp + DRAWING_DURATION + 1);
+        jackpot.settleDrawing();
+
+        // Opening d2 reverts until d1 is snapshotted.
+        vm.expectRevert(abi.encodeWithSelector(PennyPot.PriorRoundNotSnapshotted.selector, d1));
+        pot.buyTicket();
+
+        // Settle + snapshot d1, then opening d2 works.
+        pot.claimWinnings(_ids(id1));
+        pot.snapshotRoundFees(d1);
+        uint256 id2 = _buyTicket();
+        assertTrue(id2 != id1);
     }
 
     // snapshotRoundFees pulls accrued referral in itself, so it works even when nobody called

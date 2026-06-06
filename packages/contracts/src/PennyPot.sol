@@ -100,6 +100,12 @@ contract PennyPot is Ownable2Step, Pausable {
     /// @notice drawingTime of the active ticket's drawing; share sales close at it.
     uint64 public activeDeadline;
 
+    /// @notice Drawing id of the most recent buyTicket. Enforces that a drawing's referral
+    ///         fees are snapshotted before PennyPot opens the next drawing — Megapot keeps a
+    ///         single aggregate referral balance, so this stops two rounds' fees from
+    ///         commingling and being pulled into the wrong round's snapshot.
+    uint256 public lastDrawingBought;
+
     /// @notice Shares sold per Megapot ticket (0..100).
     mapping(uint256 => uint8) public soldOf;
 
@@ -195,6 +201,7 @@ contract PennyPot is Ownable2Step, Pausable {
     error RoundNotSettled();
     error AlreadySnapshotted();
     error NotSnapshotted();
+    error PriorRoundNotSnapshotted(uint256 drawingId);
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -318,6 +325,17 @@ contract PennyPot is Ownable2Step, Pausable {
         if (ms.ticketPrice != TICKET_PRICE) revert MegapotTicketPriceMismatch(TICKET_PRICE, ms.ticketPrice);
         if (block.timestamp + MIN_SELLING_WINDOW > ms.drawingTime) revert PastSellingWindow();
 
+        // Per-round fee attribution: before opening a NEW drawing, the previous drawing
+        // PennyPot participated in must have its referral fees snapshotted. Megapot keeps one
+        // aggregate referral balance; snapshotting drains it to zero, so gating here ensures
+        // the next round starts with a clean balance and each snapshot captures exactly its
+        // own round's fees. The prior round is already settled (Megapot has advanced), so this
+        // is permissionlessly satisfiable: claimWinnings(prev) -> snapshotRoundFees(prev).
+        uint256 prevDrawing = lastDrawingBought;
+        if (prevDrawing != 0 && prevDrawing != drawingId && !roundSnapshotted[prevDrawing]) {
+            revert PriorRoundNotSnapshotted(prevDrawing);
+        }
+
         // Reserve fronts the ticket cost.
         if (reservePool < TICKET_PRICE) revert ReserveTooLowForTicket(reservePool, TICKET_PRICE);
         reservePool -= TICKET_PRICE;
@@ -338,6 +356,7 @@ contract PennyPot is Ownable2Step, Pausable {
         activeDeadline = uint64(ms.drawingTime);
         drawingTickets[drawingId].push(newId);
         ticketDrawingId[newId] = drawingId;
+        lastDrawingBought = drawingId;
 
         emit TicketBought(drawingId, newId, msg.sender);
     }

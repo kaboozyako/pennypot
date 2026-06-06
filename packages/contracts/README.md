@@ -106,7 +106,10 @@ Users:
 ### Permissionless cranks
 
 - `buyTicket()` — front + buy the next Megapot ticket (into the current drawing);
-  allowed only when the active ticket is full or its drawing's window has ended.
+  allowed only when the active ticket is full or its drawing's window has ended. Opening a
+  **new** drawing additionally requires the previous drawing PennyPot participated in to have
+  been fee-snapshotted (`snapshotRoundFees`) — Megapot keeps one aggregate referral balance,
+  so this keeps each round's fees isolated. Reverts `PriorRoundNotSnapshotted` otherwise.
 - `claimWinnings(uint256[] ticketIds)` — settle tickets: skip losers, claim winners from
   Megapot, set each `winningsPerShare`. Permissionless, idempotent; each ticket gated on
   its own drawing's settlement (via `ticketDrawingId`).
@@ -201,6 +204,10 @@ Then seed the reserve from the owner: `USDC.approve(pennyPot, amount)` then
   (required before the snapshot), then pass its referral fees to holders —
   `snapshotRoundFees(drawingId)` (self-sweeps) → `creditRoundFees(getDrawingTicketIds(drawingId))`
   (chunk the ticket ids if the round is large). Run this once per round, in order.
+- **Ordering:** the previous drawing's `snapshotRoundFees` must run before the first
+  `buyTicket` of the next drawing (`buyTicket` reverts `PriorRoundNotSnapshotted` otherwise).
+  So at each drawing boundary, run `claimWinnings → snapshotRoundFees` for the just-closed
+  drawing *before* cranking `buyTicket` into the new one.
 
 ## Testing
 
