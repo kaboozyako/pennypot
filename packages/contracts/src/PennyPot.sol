@@ -560,8 +560,9 @@ contract PennyPot is Ownable2Step, Pausable {
     // -----------------------------------------------------------------------
 
     /// @notice One-call snapshot for a UI/keeper. `canBuyNextTicket` mirrors
-    ///         buyTicket()'s exact guards (pause, active-ticket-closed, ticket-price
-    ///         match, selling window, reserve) — if it's true, buyTicket() will succeed.
+    ///         buyTicket()'s exact guards (pause, active-ticket-closed, ticket-price match,
+    ///         selling window, reserve, AND the prior-round-snapshotted gate) — if it's true,
+    ///         buyTicket() will succeed.
     /// @return currentDrawingId  Megapot's live drawing id.
     /// @return currentTicketId   The ticket currently selling shares (0 if none).
     /// @return sold              Shares sold on the active ticket (0..100).
@@ -592,8 +593,14 @@ contract PennyPot is Ownable2Step, Pausable {
         isPaused = paused();
 
         bool activeClosed = currentTicketId == 0 || sold == SHARES_PER_TICKET || block.timestamp >= deadline;
+        // Mirror buyTicket's per-round gate: opening a new drawing is blocked until the prior
+        // drawing PennyPot participated in is fee-snapshotted.
+        uint256 prevDrawing = lastDrawingBought;
+        bool priorRoundBlocked =
+            prevDrawing != 0 && prevDrawing != currentDrawingId && !roundSnapshotted[prevDrawing];
         canBuyNextTicket = !isPaused && activeClosed && ms.ticketPrice == TICKET_PRICE
-            && block.timestamp + MIN_SELLING_WINDOW <= ms.drawingTime && reserve >= TICKET_PRICE;
+            && block.timestamp + MIN_SELLING_WINDOW <= ms.drawingTime && reserve >= TICKET_PRICE
+            && !priorRoundBlocked;
     }
 
     /// @notice Megapot ticket ids bought under a drawing, in purchase order.

@@ -680,6 +680,29 @@ contract PennyPotTest is Test {
         assertFalse(canBuy);
     }
 
+    // getState must reflect the per-round snapshot gate, so the keeper/UI don't advertise a
+    // buyable state that buyTicket would revert with PriorRoundNotSnapshotted.
+    function test_getState_canBuyFalseUntilPriorRoundSnapshotted() public {
+        uint256 d1 = jackpot.currentDrawingId();
+        uint256 id1 = _buyTicket();
+        vm.prank(alice);
+        pot.buyTicketShares(id1, 50);
+
+        // Close d1 and advance Megapot to d2. Active ticket is closed and reserve is fine,
+        // but d1 isn't snapshotted yet -> canBuyNextTicket must be false.
+        vm.warp(block.timestamp + DRAWING_DURATION + 1);
+        jackpot.settleDrawing();
+        (,,,, bool canBuy,,) = pot.getState();
+        assertFalse(canBuy);
+
+        // Snapshotting d1 unblocks it (and buyTicket then succeeds).
+        pot.claimWinnings(_ids(id1));
+        pot.snapshotRoundFees(d1);
+        (,,,, canBuy,,) = pot.getState();
+        assertTrue(canBuy);
+        pot.buyTicket();
+    }
+
     // ----- getTicketHolders (cap table) ----------------------------------
 
     function test_getTicketHolders_listsOwnersAndShares() public {
