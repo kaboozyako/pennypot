@@ -45,7 +45,7 @@ export function Buy() {
   const { data: state } = useGetState();
   const { drawingTime, topPrize } = useMegapotDrawingTime();
   const usdc = useUsdc(address);
-  const [count, setCount] = useState(50);
+  const [count, setCount] = useState(0);
   const [step, setStep] = useState<Step>("idle");
   const [errMsg, setErrMsg] = useState<string | undefined>();
 
