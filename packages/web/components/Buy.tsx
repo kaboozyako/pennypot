@@ -92,9 +92,9 @@ export function Buy() {
   const remaining = Math.max(1, CONSTS.SHARES_PER_TICKET - sold); // shares left
   const cappedCount = Math.max(0, Math.min(count, remaining));
   const costUsdc = BigInt(cappedCount) * CONSTS.SHARE_PRICE_USDC;
-  // Donut wedges (out of 100 shares): your shares incl. the pending slider pick,
-  // shares held by others, and the dark unsold remainder.
-  const mineOwned = Math.min(owned + cappedCount, CONSTS.SHARES_PER_TICKET);
+  // Donut wedges (out of 100 shares): shares you already own, shares you're about
+  // to buy (the pending slider pick), shares held by others, and the dark unsold
+  // remainder.
   const othersOwned = Math.max(0, sold - owned);
   const fillPct = (cappedCount / remaining) * 100; // slider fill
 
@@ -364,7 +364,11 @@ export function Buy() {
             <div className="flex flex-col items-center gap-6 px-0.5 py-1.5 sm:flex-row sm:items-start sm:gap-7">
               <div className="flex shrink-0 flex-col items-center gap-2">
                 <Cap>Shares sold</Cap>
-                <ShareRing mine={mineOwned} others={othersOwned} />
+                <ShareRing
+                  owned={owned}
+                  pending={cappedCount}
+                  others={othersOwned}
+                />
               </div>
               <div className="min-w-0 flex-1 self-stretch">
                 <Cap>Holders</Cap>
@@ -487,18 +491,47 @@ function Balls({
   );
 }
 
-// 132px donut, three wedges out of 100 shares: pink = your shares (incl. the
-// pending slider pick), light grey = held by others, dark track = unsold. The
-// pink wedge animates as the slider moves. Center = total sold (yours + others').
-function ShareRing({ mine, others }: { mine: number; others: number }) {
+// 132px donut, four wedges out of 100 shares: solid pink = shares you already
+// own, light pink = shares you're about to buy (the pending slider pick), light
+// grey = held by others, dark track = unsold. The light-pink wedge animates as
+// the slider moves. Center = total sold (yours + pending + others').
+function ShareRing({
+  owned,
+  pending,
+  others,
+}: {
+  owned: number;
+  pending: number;
+  others: number;
+}) {
   const size = 132;
   const sw = 12;
   const r = (size - sw) / 2;
   const c = 2 * Math.PI * r;
-  const m = Math.min(100, Math.max(0, mine));
-  const o = Math.min(100 - m, Math.max(0, others));
-  const mineLen = (m / 100) * c;
-  const othersLen = (o / 100) * c;
+  // Clamp so the wedges never exceed the ring (100 shares).
+  const ow = Math.min(100, Math.max(0, owned));
+  const pe = Math.min(100 - ow, Math.max(0, pending));
+  const ot = Math.min(100 - ow - pe, Math.max(0, others));
+  const ownedLen = (ow / 100) * c;
+  const pendingLen = (pe / 100) * c;
+  const othersLen = (ot / 100) * c;
+  const seg = (stroke: string, len: number, offset: number, glow = false) => (
+    <circle
+      cx={size / 2}
+      cy={size / 2}
+      r={r}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={sw}
+      strokeDasharray={`${len} ${c}`}
+      strokeDashoffset={-offset}
+      style={{
+        transition:
+          "stroke-dasharray 0.12s ease, stroke-dashoffset 0.12s ease",
+        filter: glow ? "drop-shadow(0 0 6px rgba(255,45,136,0.5))" : undefined,
+      }}
+    />
+  );
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
@@ -511,39 +544,16 @@ function ShareRing({ mine, others }: { mine: number; others: number }) {
           stroke="#1d1d21"
           strokeWidth={sw}
         />
-        {/* held by others (light grey) — starts where your wedge ends */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="#6c6c74"
-          strokeWidth={sw}
-          strokeDasharray={`${othersLen} ${c}`}
-          strokeDashoffset={-mineLen}
-          style={{
-            transition:
-              "stroke-dasharray 0.12s ease, stroke-dashoffset 0.12s ease",
-          }}
-        />
-        {/* your shares (pink) */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="#ff2d88"
-          strokeWidth={sw}
-          strokeDasharray={`${mineLen} ${c}`}
-          style={{
-            transition: "stroke-dasharray 0.12s ease",
-            filter: "drop-shadow(0 0 6px rgba(255,45,136,0.5))",
-          }}
-        />
+        {/* held by others (light grey) */}
+        {seg("#6c6c74", othersLen, ownedLen + pendingLen)}
+        {/* shares you're about to buy (light pink) */}
+        {seg("#ff8ac0", pendingLen, ownedLen, true)}
+        {/* shares you already own (solid pink) */}
+        {seg("#ff2d88", ownedLen, 0, true)}
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
         <span className="font-mono text-[40px] font-bold tabular-nums text-accent">
-          {m + o}
+          {ow + pe + ot}
         </span>
       </div>
     </div>
