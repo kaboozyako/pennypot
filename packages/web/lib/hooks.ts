@@ -214,6 +214,22 @@ export function useTicket(ticketId?: bigint) {
   });
 }
 
+// Per-ticket cap table: holder addresses + their share counts (= % of the
+// ticket, since a ticket is 100 shares). Drives the active ticket's HOLDERS list.
+export function useTicketHolders(ticketId?: bigint) {
+  return useReadContract({
+    chainId: base.id,
+    address: PENNYPOT_ADDRESS,
+    abi: pennypotAbi,
+    functionName: "getTicketHolders",
+    args: ticketId !== undefined ? [ticketId] : undefined,
+    query: {
+      enabled: ticketId !== undefined && ticketId > 0n,
+      refetchInterval: 15_000,
+    },
+  });
+}
+
 // All Megapot tickets bought by the PennyPot contract (newest first), fetched
 // once from our server-side Data API proxy and shared across the app via a
 // stable react-query key. The picks (lottery numbers) are NOT available from

@@ -1,9 +1,8 @@
 "use client";
 
-import NumberFlow from "@number-flow/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useModal } from "connectkit";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   useAccount,
@@ -16,11 +15,12 @@ import {
 import { base } from "wagmi/chains";
 import { erc20Abi, pennypotAbi } from "@/lib/abis";
 import { PENNYPOT_ADDRESS, USDC_ADDRESS } from "@/lib/addresses";
-import { formatUsdc } from "@/lib/format";
+import { formatUsdc, shortAddr } from "@/lib/format";
 import {
   CONSTS,
   useGetState,
   useMegapotDrawingTime,
+  useTicketHolders,
   useTicketPicks,
   useUsdc,
 } from "@/lib/hooks";
@@ -43,7 +43,7 @@ export function Buy() {
   const { setOpen } = useModal();
   const { switchChain } = useSwitchChain();
   const { data: state } = useGetState();
-  const { drawingTime, topPrize } = useMegapotDrawingTime();
+  const { drawingTime } = useMegapotDrawingTime();
   const usdc = useUsdc(address);
   const [count, setCount] = useState(0);
   const [step, setStep] = useState<Step>("idle");
@@ -73,6 +73,9 @@ export function Buy() {
   });
   const owned = (myShares.data as number | undefined) ?? 0;
 
+  // Active ticket cap table: holder addresses + their share counts.
+  const holdersQ = useTicketHolders(ticketId);
+
   // Selling-shares window: active ticket exists, not full, deadline not passed.
   const sellingActive =
     !paused && ticketId !== undefined && ticketId > 0n && sold < 100 && !canBuy;
@@ -89,22 +92,41 @@ export function Buy() {
   const remaining = Math.max(1, CONSTS.SHARES_PER_TICKET - sold); // shares left
   const cappedCount = Math.max(0, Math.min(count, remaining));
   const costUsdc = BigInt(cappedCount) * CONSTS.SHARE_PRICE_USDC;
-  // "Your slice" = your share of a FULL 100-share ticket (1¢ = 1%), counting
-  // shares you ALREADY own on this ticket plus the new buy.
-  const ownedAfter = Math.min(owned + cappedCount, CONSTS.SHARES_PER_TICKET);
-  const slice = ownedAfter / CONSTS.SHARES_PER_TICKET;
-  // Shares already held by OTHERS on this ticket (current sold minus yours),
-  // shown as a second pie segment.
-  const others = Math.max(0, sold - owned);
-  const othersSlice = others / CONSTS.SHARES_PER_TICKET;
-  // Open seats left after your selection (mine + others + open = 100).
-  const openSeats = Math.max(
-    0,
-    CONSTS.SHARES_PER_TICKET - sold - cappedCount,
-  );
-  const jackpotUsd = topPrize !== undefined ? Number(topPrize) / 1e6 : undefined;
-  const winUsd = jackpotUsd !== undefined ? slice * jackpotUsd : undefined;
+  // Donut wedges (out of 100 shares): your shares incl. the pending slider pick,
+  // shares held by others, and the dark unsold remainder.
+  const mineOwned = Math.min(owned + cappedCount, CONSTS.SHARES_PER_TICKET);
+  const othersOwned = Math.max(0, sold - owned);
   const fillPct = (cappedCount / remaining) * 100; // slider fill
+
+  // The active ticket's players, sorted by shares desc (leader first). The
+  // connected user's PENDING slider selection is folded in live so "You" grows
+  // as the slider moves — mirroring the old slice ring's behavior.
+  const players = useMemo(() => {
+    const data = holdersQ.data as
+      | readonly [readonly `0x${string}`[], readonly number[]]
+      | undefined;
+    const [addrs, counts] = data ?? [[], []];
+    const me = address?.toLowerCase();
+    const list = addrs.map((addr, i) => ({
+      addr,
+      shares: Number(counts[i] ?? 0),
+      isYou: !!me && addr.toLowerCase() === me,
+    }));
+    if (address) {
+      const mine = list.find((p) => p.isYou);
+      const total = Math.min(owned + cappedCount, CONSTS.SHARES_PER_TICKET);
+      // "You" is always shown when connected — even at 0 shares — so the user
+      // sees their own row before buying.
+      if (mine) mine.shares = total;
+      else list.push({ addr: address, shares: total, isYou: true });
+    }
+    // Pin "You" first; other holders (>0 shares) follow, sorted by shares desc.
+    const others = list
+      .filter((p) => !p.isYou && p.shares > 0)
+      .sort((a, b) => b.shares - a.shares);
+    const youRow = list.find((p) => p.isYou);
+    return youRow ? [youRow, ...others] : others;
+  }, [holdersQ.data, address, owned, cappedCount]);
 
   // Date of the current drawing's close (e.g. "July 1, 2026").
   const drawingDate =
@@ -338,38 +360,15 @@ export function Buy() {
             {/* full-bleed divider — separates ticket info from the purchase UI */}
             <div className="-mx-5 h-px bg-ink-500 sm:-mx-[26px]" />
 
-            {/* hero: projected payout with the slice ring */}
-            <div className="flex items-center gap-[22px] px-0.5 py-1.5">
-              <Ring slice={slice} others={othersSlice} />
-              <div className="flex flex-col gap-1">
-                <Cap>Potential jackpot slice</Cap>
-                <span className="font-mono text-[38px] font-bold leading-none tracking-[-0.01em] text-ink-100">
-                  {winUsd !== undefined ? (
-                    <NumberFlow
-                      value={winUsd}
-                      format={{
-                        style: "currency",
-                        currency: "USD",
-                        maximumFractionDigits: 0,
-                      }}
-                    />
-                  ) : (
-                    "$—"
-                  )}
-                </span>
-                <span className="mt-0.5 font-mono text-[13px]">
-                  <span className="text-accent">{ownedAfter} mine</span>
-                  <span className="text-ink-400"> · </span>
-                  <span style={{ color: "#6c6c74" }}>{others} others</span>
-                  {openSeats > 0 ? (
-                    <>
-                      <span className="text-ink-400"> · </span>
-                      <span className="text-ink-200">
-                        {openSeats} available
-                      </span>
-                    </>
-                  ) : null}
-                </span>
+            {/* hero: shares-available donut + the ticket's player list */}
+            <div className="flex flex-col items-center gap-6 px-0.5 py-1.5 sm:flex-row sm:items-start sm:gap-7">
+              <div className="flex shrink-0 flex-col items-center gap-2">
+                <Cap>Shares sold</Cap>
+                <ShareRing mine={mineOwned} others={othersOwned} />
+              </div>
+              <div className="min-w-0 flex-1 self-stretch">
+                <Cap>Holders</Cap>
+                <Holders players={players} />
               </div>
             </div>
 
@@ -488,19 +487,22 @@ function Balls({
   );
 }
 
-// 132px donut: pink = your slice, grey = held by others, dark track = unsold.
-// Arcs animate as the slider moves.
-function Ring({ slice, others }: { slice: number; others: number }) {
+// 132px donut, three wedges out of 100 shares: pink = your shares (incl. the
+// pending slider pick), light grey = held by others, dark track = unsold. The
+// pink wedge animates as the slider moves. Center = total sold (yours + others').
+function ShareRing({ mine, others }: { mine: number; others: number }) {
   const size = 132;
   const sw = 12;
   const r = (size - sw) / 2;
   const c = 2 * Math.PI * r;
-  const yourLen = Math.min(1, slice) * c;
-  const othersLen = Math.min(Math.max(0, 1 - slice), others) * c;
+  const m = Math.min(100, Math.max(0, mine));
+  const o = Math.min(100 - m, Math.max(0, others));
+  const mineLen = (m / 100) * c;
+  const othersLen = (o / 100) * c;
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-        {/* unsold (empty seats) */}
+        {/* unsold (dark track) */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -509,7 +511,7 @@ function Ring({ slice, others }: { slice: number; others: number }) {
           stroke="#1d1d21"
           strokeWidth={sw}
         />
-        {/* held by others — starts where your slice ends */}
+        {/* held by others (light grey) — starts where your wedge ends */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -518,12 +520,13 @@ function Ring({ slice, others }: { slice: number; others: number }) {
           stroke="#6c6c74"
           strokeWidth={sw}
           strokeDasharray={`${othersLen} ${c}`}
-          strokeDashoffset={-yourLen}
+          strokeDashoffset={-mineLen}
           style={{
-            transition: "stroke-dasharray 0.12s ease, stroke-dashoffset 0.12s ease",
+            transition:
+              "stroke-dasharray 0.12s ease, stroke-dashoffset 0.12s ease",
           }}
         />
-        {/* your slice */}
+        {/* your shares (pink) */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -531,7 +534,7 @@ function Ring({ slice, others }: { slice: number; others: number }) {
           fill="none"
           stroke="#ff2d88"
           strokeWidth={sw}
-          strokeDasharray={`${yourLen} ${c}`}
+          strokeDasharray={`${mineLen} ${c}`}
           style={{
             transition: "stroke-dasharray 0.12s ease",
             filter: "drop-shadow(0 0 6px rgba(255,45,136,0.5))",
@@ -539,10 +542,65 @@ function Ring({ slice, others }: { slice: number; others: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="font-mono text-[26px] font-bold tabular-nums text-accent">
-          {(slice * 100).toFixed(1)}%
+        <span className="font-mono text-[40px] font-bold tabular-nums text-accent">
+          {m + o}
         </span>
       </div>
     </div>
+  );
+}
+
+type Player = { addr: string; shares: number; isYou: boolean };
+
+// The active ticket's cap table: one row per holder (You highlighted + first),
+// each with a share count and a bar scaled to the leading holder.
+function Holders({ players }: { players: Player[] }) {
+  if (players.length === 0) {
+    return (
+      <div className="mt-2 rounded-xl border border-ink-500 bg-ink-800/40 px-4 py-5 text-center font-mono text-xs text-ink-300">
+        No shares sold yet — be the first.
+      </div>
+    );
+  }
+  const max = Math.max(...players.map((p) => p.shares), 1);
+  return (
+    <ul className="mt-2 flex flex-col divide-y divide-ink-500/60 overflow-hidden rounded-xl border border-ink-500 bg-ink-800/40">
+      {players.map((p) => (
+        <li
+          key={p.addr}
+          className="flex flex-col gap-1.5 px-4 py-2.5"
+        >
+          <div className="flex items-center justify-between gap-3 font-mono text-sm">
+            <span className="flex min-w-0 items-center gap-2">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ background: p.isYou ? "#ff2d88" : "#6c6c74" }}
+              />
+              <span
+                className={
+                  p.isYou
+                    ? "truncate font-bold text-ink-100"
+                    : "truncate text-ink-200"
+                }
+              >
+                {p.isYou ? "You" : shortAddr(p.addr)}
+              </span>
+            </span>
+            <span className="shrink-0 text-ink-200">
+              <b className="text-ink-100">{p.shares}</b> shares
+            </span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink-600">
+            <div
+              className="h-full rounded-full transition-[width] duration-300 ease-out"
+              style={{
+                width: `${(p.shares / max) * 100}%`,
+                background: p.isYou ? "#ff2d88" : "#6c6c74",
+              }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

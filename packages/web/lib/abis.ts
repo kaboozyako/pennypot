@@ -56,6 +56,16 @@ export const pennypotAbi = [
   },
   {
     type: "function",
+    name: "getTicketHolders",
+    stateMutability: "view",
+    inputs: [{ name: "ticketId", type: "uint256" }],
+    outputs: [
+      { name: "holders", type: "address[]" },
+      { name: "shareCounts", type: "uint8[]" },
+    ],
+  },
+  {
+    type: "function",
     name: "getDrawingTicketIds",
     stateMutability: "view",
     inputs: [{ name: "drawingId", type: "uint256" }],
