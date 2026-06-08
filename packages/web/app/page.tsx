@@ -6,6 +6,7 @@ import { CurrentRound } from "@/components/CurrentRound";
 import { Hero } from "@/components/Hero";
 import { NetworkBanner } from "@/components/NetworkBanner";
 import { Positions } from "@/components/Positions";
+import { PENNYPOT_ADDRESS } from "@/lib/addresses";
 
 export default function Page() {
   return (
@@ -38,7 +39,7 @@ export default function Page() {
         </a>
         <span className="mx-2">·</span>
         <a
-          href="https://basescan.org/address/0xdCc075040Cf5888dBa26E9871427949BAb7591ba"
+          href={`https://basescan.org/address/${PENNYPOT_ADDRESS}`}
           target="_blank"
           rel="noopener noreferrer"
           className="hover:text-accent"
