@@ -48,7 +48,7 @@ export default function Page() {
         </a>
         <span className="mx-2">·</span>
         <a
-          href="https://megapot.io"
+          href="https://megapot.io/r/U57WDQ"
           target="_blank"
           rel="noopener noreferrer"
           className="hover:text-accent"
