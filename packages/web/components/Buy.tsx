@@ -370,7 +370,7 @@ export function Buy() {
                   others={othersOwned}
                 />
               </div>
-              <div className="min-w-0 flex-1 self-stretch">
+              <div className="flex min-w-0 flex-1 flex-col self-stretch">
                 <Cap>Holders</Cap>
                 <Holders players={players} />
               </div>
@@ -565,10 +565,18 @@ type Player = { addr: string; shares: number; isYou: boolean };
 // The active ticket's cap table: one row per holder (You highlighted + first),
 // each with a share count and a bar scaled to the leading holder.
 function Holders({ players }: { players: Player[] }) {
-  if (players.length === 0) {
+  // No one holds any shares yet (and you haven't picked any) — invite the first buy.
+  if (!players.some((p) => p.shares > 0)) {
     return (
-      <div className="mt-2 rounded-xl border border-ink-500 bg-ink-800/40 px-4 py-5 text-center font-mono text-xs text-ink-300">
-        No shares sold yet — be the first.
+      <div className="mt-2 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-ink-500 bg-ink-800/40 px-4 py-6 text-center">
+        <div className="font-mono text-base font-bold leading-tight text-ink-100">
+          Be the first holder
+        </div>
+        <div className="font-mono text-xs leading-relaxed text-ink-300">
+          Buy a single share and own{" "}
+          <span className="font-bold text-accent">100%</span> until someone else
+          joins.
+        </div>
       </div>
     );
   }
