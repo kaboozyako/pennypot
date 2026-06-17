@@ -34,8 +34,13 @@ export default function Page() {
       <Positions />
 
       <footer className="mx-auto w-full max-w-3xl px-4 pb-12 pt-4 text-center font-mono text-[10px] uppercase tracking-[0.25em] text-ink-300">
-        <a href="/tickets" className="hover:text-accent">
-          all tickets →
+        <a
+          href="https://x.com/andreitr/status/2062195584056913925"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-accent"
+        >
+          built by @andreitr ↗
         </a>
         <span className="mx-2">·</span>
         <a
