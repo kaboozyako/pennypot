@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/buy-ticket",
+      "schedule": "*/3 * * * *"
+    },
+    {
+      "path": "/api/cron/claim-winnings",
+      "schedule": "10 * * * *"
+    }
+  ]
+}

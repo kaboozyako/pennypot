@@ -1,0 +1,13 @@
+{
+  "name": "@pennypot/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PennyPot Solidity contracts (Foundry).",
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test",
+    "fmt": "forge fmt",
+    "snapshot": "forge snapshot",
+    "deploy": "forge script script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify"
+  }
+}

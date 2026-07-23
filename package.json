@@ -1,0 +1,15 @@
+{
+  "name": "pennypot",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PennyPot — buy 1¢ shares of Megapot lottery tickets. Monorepo for the Solidity contracts and (future) webapp.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @pennypot/contracts build",
+    "test": "pnpm --filter @pennypot/contracts test",
+    "fmt": "pnpm --filter @pennypot/contracts fmt"
+  },
+  "packageManager": "pnpm@9.12.0"
+}

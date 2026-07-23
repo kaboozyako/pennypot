@@ -1,0 +1,456 @@
+"use client";
+
+import { useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useReadContracts,
+  useWriteContract,
+} from "wagmi";
+import { base } from "wagmi/chains";
+import { jackpotAbi, pennypotAbi } from "@/lib/abis";
+import {
+  JACKPOT_ADDRESS,
+  JACKPOT_TICKET_NFT_ADDRESS,
+  PENNYPOT_ADDRESS,
+} from "@/lib/addresses";
+import { formatUsdc } from "@/lib/format";
+import {
+  useClaimable,
+  useFeesClaimable,
+  useGetState,
+  useMegapotContractTickets,
+  useUserPositions,
+} from "@/lib/hooks";
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+// My Positions — a scannable portfolio (handoff §5): summary stats + Claim,
+// Active/All filter tabs, and per-ticket rows that mirror the current-round
+// ticket layout (balls · drawing date · share-of-ticket bar · Basescan link).
+export function Positions() {
+  const { address } = useAccount();
+  const chainId = useChainId();
+  const wrongChain = !!address && chainId !== base.id;
+  const queryClient = useQueryClient();
+  const claimable = useClaimable(address);
+  const feesClaimable = useFeesClaimable(address);
+  const { data: gs } = useGetState();
+  const currentDrawingId = gs?.[0];
+  const { positions, loading, error } = useUserPositions(address);
+
+  // Each ticket's drawing id.
+  const ticketDrawings = useReadContracts({
+    contracts: (positions ?? []).map((p) => ({
+      chainId: base.id,
+      address: PENNYPOT_ADDRESS,
+      abi: pennypotAbi,
+      functionName: "ticketDrawingId" as const,
+      args: [p.ticketId] as const,
+    })),
+    query: { enabled: !!positions && positions.length > 0, refetchInterval: 60_000 },
+  });
+
+  // Per-ticket detail → winningsPerShare (index 2) so we can show the won amount.
+  const ticketDetail = useReadContracts({
+    contracts: (positions ?? []).map((p) => ({
+      chainId: base.id,
+      address: PENNYPOT_ADDRESS,
+      abi: pennypotAbi,
+      functionName: "getTicket" as const,
+      args: [p.ticketId] as const,
+    })),
+    query: { enabled: !!positions && positions.length > 0, refetchInterval: 30_000 },
+  });
+
+  // Each drawing's close time → the row's date label.
+  const drawingStates = useReadContracts({
+    contracts: (positions ?? []).map((_p, i) => {
+      const drawing = ticketDrawings.data?.[i]?.result as bigint | undefined;
+      return {
+        chainId: base.id,
+        address: JACKPOT_ADDRESS,
+        abi: jackpotAbi,
+        functionName: "getDrawingState" as const,
+        args: [drawing ?? 0n] as const,
+      };
+    }),
+    query: {
+      enabled:
+        !!positions &&
+        positions.length > 0 &&
+        !!ticketDrawings.data &&
+        ticketDrawings.data.every((r) => r?.result !== undefined),
+      refetchInterval: 300_000,
+    },
+  });
+
+  // Lottery picks per ticket (Data API), keyed by Megapot ticket id.
+  const picksQ = useMegapotContractTickets();
+  const picksMap = useMemo(() => {
+    const m = new Map<string, { normals: number[]; bonusball: number }>();
+    for (const t of picksQ.data ?? []) {
+      m.set(t.user_ticket_id, { normals: t.normals, bonusball: t.bonusball });
+    }
+    return m;
+  }, [picksQ.data]);
+
+  // Combine + sort newest-first: by drawing desc, then by ticketId (purchase
+  // order) desc so same-drawing tickets show the most-recently-bought on top.
+  const rows = (positions ?? [])
+    .map((p, i) => {
+      const drawing = ticketDrawings.data?.[i]?.result as bigint | undefined;
+      const ds = drawingStates.data?.[i]?.result as
+        | { drawingTime: bigint }
+        | undefined;
+      const det = ticketDetail.data?.[i]?.result as
+        | readonly [number, number, bigint, boolean]
+        | undefined;
+      // "Active" = the ticket belongs to the CURRENT Megapot round. Once the
+      // drawing flips, prior-round tickets are no longer active even if the
+      // keeper hasn't settled (claimed) them yet.
+      const active =
+        drawing !== undefined &&
+        currentDrawingId !== undefined &&
+        drawing === currentDrawingId;
+      // winningsPerShare × your shares — non-zero only for settled winners.
+      const wps = det?.[2] ?? 0n;
+      const won = wps > 0n ? wps * BigInt(p.shares) : 0n;
+      return {
+        ticketId: p.ticketId,
+        shares: p.shares,
+        block: p.block,
+        drawing,
+        drawingTime: ds?.drawingTime,
+        active,
+        won,
+        picks: picksMap.get(p.ticketId.toString()),
+      };
+    })
+    .sort((a, b) => {
+      const da = a.drawing ?? 0n;
+      const db = b.drawing ?? 0n;
+      if (da !== db) return db > da ? 1 : -1; // newest drawing first
+      // Megapot ticket IDs are random, so order by purchase block (newest first).
+      return b.block > a.block ? 1 : a.block > b.block ? -1 : 0;
+    });
+
+  const activeRows = rows.filter((r) => r.active);
+  const activeShares = activeRows.reduce((s, r) => s + r.shares, 0);
+  const winningsAmt = claimable.data ?? 0n;
+  const feesAmt = feesClaimable.data ?? 0n;
+  // Winnings and referral fees are two on-chain balances but one user-facing
+  // "Claimable" total; the Claim button withdraws whichever are non-zero.
+  const claimableAmt = winningsAmt + feesAmt;
+  const hasClaimable = claimableAmt > 0n;
+
+  const [filter, setFilter] = useState<"Active" | "All">("Active");
+  const shown = filter === "All" ? rows : activeRows;
+  const tabs: Array<["Active" | "All", number]> = [
+    ["Active", activeRows.length],
+    ["All", rows.length],
+  ];
+
+  const publicClient = usePublicClient({ chainId: base.id });
+  const { writeContractAsync } = useWriteContract();
+  const [withdrawing, setWithdrawing] = useState(false);
+
+  // Withdraw one on-chain balance and block-anchor-poll until it clears (defeats
+  // RPC node lag). `fn` is the withdraw call, `readFn` the matching balance read.
+  async function withdrawAndConfirm(
+    fn: "withdraw" | "withdrawFees",
+    readFn: "balance" | "pendingFees",
+    amount: bigint,
+    toastId: string | number,
+  ) {
+    if (!publicClient || !address) return;
+    const hash = await writeContractAsync({
+      address: PENNYPOT_ADDRESS,
+      abi: pennypotAbi,
+      functionName: fn,
+    });
+    toast.loading(`Waiting for claim to confirm on-chain…`, { id: toastId });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    for (let i = 0; i < 12; i++) {
+      try {
+        const newBalance = (await publicClient.readContract({
+          address: PENNYPOT_ADDRESS,
+          abi: pennypotAbi,
+          functionName: readFn,
+          args: [address],
+          blockNumber: receipt.blockNumber,
+        })) as bigint;
+        if (newBalance < amount) break;
+      } catch {
+        // RPC behind on this block — wait and retry.
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  async function doClaim() {
+    if (!publicClient || !address) return;
+    const total = claimableAmt;
+    if (total === 0n) return;
+    setWithdrawing(true);
+    const toastId = toast.loading(
+      `Claiming ${formatUsdc(total)}… (confirm in wallet)`,
+    );
+    try {
+      // Winnings and referral fees are separate contract calls — fire whichever
+      // are non-zero, in sequence (each prompts its own wallet confirmation).
+      if (winningsAmt > 0n) {
+        await withdrawAndConfirm("withdraw", "balance", winningsAmt, toastId);
+      }
+      if (feesAmt > 0n) {
+        await withdrawAndConfirm("withdrawFees", "pendingFees", feesAmt, toastId);
+      }
+
+      queryClient.invalidateQueries();
+      toast.success(`Claimed ${formatUsdc(total)}`, {
+        id: toastId,
+        description: `Sent to your wallet on Base.`,
+        duration: 6000,
+      });
+    } catch (e) {
+      const msg = (e as Error).message.split("\n")[0];
+      const userRejected = /reject|denied|user/i.test(msg);
+      toast.error(userRejected ? "Wallet rejected the request" : "Claim failed", {
+        id: toastId,
+        description: userRejected ? undefined : msg.slice(0, 180),
+      });
+    } finally {
+      setWithdrawing(false);
+    }
+  }
+
+  return (
+    <section className="relative z-10 mx-auto w-full max-w-3xl px-4 py-6">
+      <h2 className="mb-3 px-1 font-mono text-xs uppercase tracking-[0.25em] text-ink-300">
+        ▌ My positions
+      </h2>
+
+      <div className="rounded-2xl border border-ink-500 bg-ink-700 p-6">
+        {!address ? (
+          <p className="text-ink-200">Connect a wallet to see your positions.</p>
+        ) : (
+          <>
+            {/* summary: stats + Claim, one inline row */}
+            <div className="flex flex-wrap items-center gap-5">
+              <Stat k="Active tickets" v={activeRows.length.toString()} />
+              <Stat k="Active shares" v={activeShares.toString()} />
+              <Stat
+                k="Claimable"
+                v={formatUsdc(claimableAmt)}
+                tone={hasClaimable ? "mint" : "dim"}
+              />
+              {hasClaimable ? (
+                <button
+                  type="button"
+                  onClick={doClaim}
+                  disabled={withdrawing || wrongChain}
+                  className="ml-auto rounded-[9px] border border-ink-500 bg-accent px-6 py-[11px] font-mono text-[13px] font-bold text-[#10000a] transition hover:shadow-[0_4px_16px_rgba(255,45,136,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {withdrawing
+                    ? "claiming…"
+                    : wrongChain
+                      ? "switch to Base"
+                      : "Claim"}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="my-5 h-px bg-ink-500" />
+
+            {/* filter tabs */}
+            <div className="flex gap-1.5 pb-1">
+              {tabs.map(([t, n]) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setFilter(t)}
+                  className={`rounded-lg px-3 py-[7px] font-mono text-[12.5px] font-semibold transition ${
+                    filter === t
+                      ? "bg-ink-600 text-ink-100 shadow-[inset_0_0_0_1px_#262626]"
+                      : "bg-transparent text-ink-300 hover:text-ink-200"
+                  }`}
+                >
+                  {t} <span className="ml-0.5 text-ink-300">{n}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* rows */}
+            {loading ? (
+              <div className="mt-3 text-sm text-ink-300">loading from logs…</div>
+            ) : error ? (
+              <div className="mt-3 text-xs text-accent">{error}</div>
+            ) : rows.length === 0 ? (
+              <div className="mt-3 text-sm text-ink-300">
+                No share purchases yet.
+              </div>
+            ) : shown.length === 0 ? (
+              <div className="mt-3 text-sm text-ink-300">
+                No {filter.toLowerCase()} positions.
+              </div>
+            ) : (
+              <div className="mt-1">
+                {shown.map((r) => (
+                  <PositionRow key={r.ticketId.toString()} r={r} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type Row = {
+  ticketId: bigint;
+  shares: number;
+  drawingTime?: bigint;
+  active: boolean;
+  won: bigint;
+  picks?: { normals: number[]; bonusball: number };
+};
+
+function PositionRow({ r }: { r: Row }) {
+  const dateLabel =
+    r.drawingTime !== undefined
+      ? new Date(Number(r.drawingTime) * 1000)
+          .toLocaleDateString("en-US", { month: "long", day: "numeric" })
+          .toUpperCase()
+      : "—";
+  return (
+    <div className="flex flex-col gap-3 border-b border-ink-500 py-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
+      {/* identity — balls, date, won badge (top line on mobile) */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 sm:flex-1">
+        <PositionBalls picks={r.picks} />
+        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-300">
+          {dateLabel}
+        </span>
+        {r.won > 0n ? (
+          <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-accent">
+            won {formatUsdc(r.won, { dp: 2 })}
+          </span>
+        ) : null}
+      </div>
+
+      {/* metrics — bar + shares + link (bottom line on mobile) */}
+      <div className="flex items-center gap-4">
+        <div className="flex w-[150px] shrink-0 flex-col items-end gap-1.5">
+          <div className="h-[5px] w-full overflow-hidden rounded-[3px] bg-[#1d1d21]">
+            <div
+              className={`h-full rounded-[3px] ${r.active ? "bg-accent" : "bg-ink-300"}`}
+              style={{ width: `${Math.min(100, r.shares)}%` }}
+            />
+          </div>
+          <span
+            className={`font-mono text-[11.5px] font-bold tabular-nums ${
+              r.active ? "text-ink-100" : "text-ink-300"
+            }`}
+          >
+            {r.shares} shares
+          </span>
+        </div>
+        <a
+          href={`https://basescan.org/nft/${JACKPOT_TICKET_NFT_ADDRESS}/${r.ticketId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="View on Basescan"
+          className="flex shrink-0 items-center text-ink-300 transition hover:text-accent"
+        >
+          <ExtIcon />
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function PositionBalls({
+  picks,
+}: {
+  picks?: { normals: number[]; bonusball: number };
+}) {
+  if (!picks) {
+    return (
+      <div className="flex shrink-0 items-center gap-1.5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <span
+            key={i}
+            className="h-6 w-6 rounded-full border-[1.5px] border-white/10"
+          />
+        ))}
+        <span className="h-6 w-6 rounded-full bg-ink-600" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      {picks.normals.map((n, i) => (
+        <span
+          key={`${i}-${n}`}
+          className="flex h-6 w-6 items-center justify-center rounded-full border-[1.5px] border-white/20 font-mono text-[10px] font-bold tabular-nums text-[#e6e6e8]"
+        >
+          {pad2(n)}
+        </span>
+      ))}
+      <span className="h-0.5 w-[5px] rounded-sm bg-ink-300" />
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent font-mono text-[10px] font-bold tabular-nums text-[#10000a] shadow-[0_0_10px_rgba(255,45,136,0.45)]">
+        {pad2(picks.bonusball)}
+      </span>
+    </div>
+  );
+}
+
+function Stat({
+  k,
+  v,
+  tone,
+}: {
+  k: string;
+  v: string;
+  tone?: "ink" | "mint" | "dim";
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-300">
+        {k}
+      </div>
+      <span
+        className={`font-mono text-[21px] font-bold tabular-nums ${
+          tone === "mint"
+            ? "text-[#37d9a4]"
+            : tone === "dim"
+              ? "text-ink-300"
+              : "text-ink-100"
+        }`}
+      >
+        {v}
+      </span>
+    </div>
+  );
+}
+
+function ExtIcon() {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 7L7 3M4 3h3v3" />
+    </svg>
+  );
+}
