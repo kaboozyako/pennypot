@@ -4,7 +4,7 @@
   "private": true,
   "description": "PennyPot Solidity contracts (Foundry).",
   "scripts": {
-    "build": "echo 'Contracts already compiled'",
+    "build": "echo skip",
     "test": "forge test",
     "fmt": "forge fmt",
     "snapshot": "forge snapshot",
