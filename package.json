@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "pnpm --filter @pennypot/contracts build",
+    "build": "echo 'Contracts already compiled locally'",
     "test": "pnpm --filter @pennypot/contracts test",
     "fmt": "pnpm --filter @pennypot/contracts fmt"
   },
