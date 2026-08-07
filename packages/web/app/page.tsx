@@ -35,12 +35,12 @@ export default function Page() {
 
       <footer className="mx-auto w-full max-w-3xl px-4 pb-12 pt-4 text-center font-mono text-[10px] uppercase tracking-[0.25em] text-ink-300">
         <a
-          href="https://x.com/andreitr/status/2062195584056913925"
+          href="https://x.com/kaboozyako"
           target="_blank"
           rel="noopener noreferrer"
           className="hover:text-accent"
         >
-          built by @andreitr ↗
+          built by @kaboozyako ↗
         </a>
         <span className="mx-2">·</span>
         <a
@@ -53,7 +53,7 @@ export default function Page() {
         </a>
         <span className="mx-2">·</span>
         <a
-          href="https://megapot.io/r/U57WDQ"
+          href="https://megapot.io/r/RRQ4HJ"
           target="_blank"
           rel="noopener noreferrer"
           className="hover:text-accent"
