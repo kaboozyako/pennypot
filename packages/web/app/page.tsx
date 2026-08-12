@@ -35,12 +35,12 @@ export default function Page() {
 
       <footer className="mx-auto w-full max-w-3xl px-4 pb-12 pt-4 text-center font-mono text-[10px] uppercase tracking-[0.25em] text-ink-300">
         <a
-          href="https://x.com/kaboozyako"
+          href="https://x.com/pennypotxyz"
           target="_blank"
           rel="noopener noreferrer"
           className="hover:text-accent"
         >
-          built by @kaboozyako ↗
+          follow us on X ↗
         </a>
         <span className="mx-2">·</span>
         <a
