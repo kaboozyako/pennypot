@@ -29,12 +29,22 @@ export default function Page() {
 
       <NetworkBanner />
 
+      {/* --- БЛОК БАНЕРА ПОЧАТОК --- */}
+      <section className="mx-auto w-full max-w-3xl px-4 pt-6 pb-2">
+        <img 
+          src="/banner.png" 
+          alt="Promo Banner" 
+          className="w-full h-auto rounded-[18px] border border-ink-500 shadow-glow" 
+        />
+      </section>
+      {/* --- БЛОК БАНЕРА КІНЕЦЬ --- */}
+
       <Hero />
       <Buy />
       <CurrentRound />
       <Positions />
 
-      <footer className="mx-auto w-full max-w-3xl px-4 pb-12 pt-4 text-center font-mono text-[10px] uppercase tracking-[0.25em] text-ink-300">
+      <footer className="mx-auto w-full max-w-3xl px-4 pb-12 pt-4 text-center text-[10px] uppercase tracking-[0.25em] text-ink-300">
         <a
           href="https://x.com/pennypotxyz"
           target="_blank"
