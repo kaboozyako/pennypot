@@ -19,10 +19,12 @@ export function Hero() {
       <div className="mt-1 font-mono text-5xl font-black tracking-tighter text-accent drop-shadow-[0_0_22px_rgba(255,191,0,0.55)] sm:text-7xl">
         {topPrize !== undefined ? formatUsdc(topPrize, { dp: 0 }) : "—"}
       </div>
-      <p className="mx-auto mt-3 max-w-[480px] text-sm text-ink-200 sm:text-base">
-        1¢ buys 1% of a Megapot ticket. Empty seats grow your slice. Come back
-        after the drawing to claim.
-      </p>
+      <p 
+  className="mt-4 text-sm text-ink-200 text-center tracking-wide" 
+  style={{ fontFamily: '"Rye", serif' }}
+>
+  1¢ buys 1% of a Megapot ticket. Empty seats grow your slice. Come back after the drawing to claim.
+</p>
     </section>
   );
 }
