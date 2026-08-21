@@ -331,7 +331,7 @@ export function Buy() {
                   </div>
                 )}
                 <a
-                  href="https://megapot.io/r/U57WDQ"
+                  href="https://megapot.io/r/RRQ4HJ"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Powered by Megapot — visit megapot.io"
