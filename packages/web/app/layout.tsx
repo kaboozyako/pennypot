@@ -30,6 +30,22 @@ export const metadata: Metadata = {
   },
 };
 
+import { Html, Head, Main, NextScript } from 'next/document';
+
+export default function Document() {
+  return (
+    <Html>
+      <Head>
+        <meta name="base:app_id" content="6a88130c39d7d26f4bad15db" />
+      </Head>
+      <body>
+        <Main />
+        <NextScript />
+      </body>
+    </Html>
+  );
+}
+
 export default function RootLayout({
   children,
 }: {
