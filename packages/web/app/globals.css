@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+body {
+  font-family: 'Rye', serif;
+} 
+
 :root {
   color-scheme: dark;
 }

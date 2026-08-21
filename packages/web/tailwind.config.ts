@@ -1,13 +1,13 @@
 import type { Config } from "tailwindcss";
 
-// Penny-arcade aesthetic: dark canvas, hot-pink accent, monospace amounts.
+// Penny-arcade aesthetic: dark canvas, gold accent, Rye font.
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   darkMode: "class",
   theme: {
     extend: {
       colors: {
-        // Hot pink — penny arcade vibe.
+        // Gold / Hot pink — penny arcade vibe.
         accent: {
           DEFAULT: "#FFBF00",
           glow: "#ff66ad",
@@ -26,26 +26,9 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: [
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica Neue",
-          "Arial",
-          "sans-serif",
-        ],
-        mono: [
-          "ui-monospace",
-          "SFMono-Regular",
-          "Menlo",
-          "Monaco",
-          "Consolas",
-          "Liberation Mono",
-          "Courier New",
-          "monospace",
-        ],
+        // Робимо Rye глобальним шрифтом для всього сайту
+        sans: ["Rye", "sans-serif"],
+        mono: ["Rye", "monospace"],
       },
       boxShadow: {
         glow: "0 0 24px rgba(255,191,0,0.45), 0 0 4px rgba(255,191,0,0.7)",
