@@ -16,7 +16,7 @@ export function Hero() {
       <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-ink-300">
         Today's Jackpot
       </div>
-      <div className="mt-1 font-mono text-5xl font-black tracking-tighter text-accent drop-shadow-[0_0_22px_rgba(255,45,136,0.55)] sm:text-7xl">
+      <div className="mt-1 font-mono text-5xl font-black tracking-tighter text-accent drop-shadow-[0_0_22px_rgba(255,191,0,0.55)] sm:text-7xl">
         {topPrize !== undefined ? formatUsdc(topPrize, { dp: 0 }) : "—"}
       </div>
       <p className="mx-auto mt-3 max-w-[480px] text-sm text-ink-200 sm:text-base">

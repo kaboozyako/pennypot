@@ -22,12 +22,12 @@ export default function ClientProviders({
           mode="dark"
           options={{ initialChainId: 8453 }}
           customTheme={{
-            "--ck-accent-color": "#ff2d88",
+            "--ck-accent-color": "#FFBF00",
             "--ck-accent-text-color": "#0a0a0a",
-            "--ck-primary-button-background": "#ff2d88",
+            "--ck-primary-button-background": "#FFBF00",
             "--ck-primary-button-color": "#0a0a0a",
             "--ck-primary-button-hover-background": "#ff66ad",
-            "--ck-focus-color": "#ff2d88",
+            "--ck-focus-color": "#FFBF00",
             "--ck-border-radius": "12px",
             "--ck-font-family":
               'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',

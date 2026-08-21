@@ -283,7 +283,7 @@ export function Buy() {
 
   return (
     <section className="relative z-10 mx-auto w-full max-w-3xl px-4 pb-8">
-      <div className="rounded-[18px] border border-ink-500 bg-ink-700 p-5 shadow-[0_0_0_1px_rgba(255,45,136,0.05),0_0_40px_rgba(255,45,136,0.06)] sm:p-[26px]">
+      <div className="rounded-[18px] border border-ink-500 bg-ink-700 p-5 shadow-[0_0_0_1px_rgba(255,191,0,0.05),0_0_40px_rgba(255,191,0,0.06)] sm:p-[26px]">
         {paused ? (
           <p className="text-accent">Contract is paused.</p>
         ) : awaitingNextTicket ? (
@@ -394,7 +394,7 @@ export function Buy() {
                 onChange={(e) => setCount(Number(e.target.value))}
                 aria-label="Shares to buy"
                 style={{
-                  background: `linear-gradient(90deg, #ff2d88 ${fillPct}%, #26262c ${fillPct}%)`,
+                  background: `linear-gradient(90deg, #FFBF00 ${fillPct}%, #26262c ${fillPct}%)`,
                 }}
               />
             </div>
@@ -445,7 +445,7 @@ export function Buy() {
 
 // Full-width pink primary button (design: payout-shadow, dark on-pink text).
 const BUY_BTN =
-  "w-full rounded-xl bg-accent px-4 py-[15px] font-mono text-base font-bold text-[#10000a] shadow-[0_6px_20px_rgba(255,45,136,0.35)] transition hover:shadow-[0_8px_26px_rgba(255,45,136,0.5)] disabled:cursor-not-allowed disabled:opacity-50";
+  "w-full rounded-xl bg-accent px-4 py-[15px] font-mono text-base font-bold text-[#10000a] shadow-[0_6px_20px_rgba(255,191,0,0.35)] transition hover:shadow-[0_8px_26px_rgba(255,191,0,0.5)] disabled:cursor-not-allowed disabled:opacity-50";
 
 function Cap({ children }: { children: ReactNode }) {
   return (
@@ -484,7 +484,7 @@ function Balls({
         </span>
       ))}
       <span className="mx-px h-0.5 w-1.5 rounded-sm bg-ink-300" />
-      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent font-mono text-[17px] font-bold tabular-nums tracking-[-0.02em] text-[#10000a] shadow-[0_0_14px_rgba(255,45,136,0.55)]">
+      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-accent font-mono text-[17px] font-bold tabular-nums tracking-[-0.02em] text-[#10000a] shadow-[0_0_14px_rgba(255,191,0,0.55)]">
         {pad2(bonusball)}
       </span>
     </div>
@@ -528,7 +528,7 @@ function ShareRing({
       style={{
         transition:
           "stroke-dasharray 0.12s ease, stroke-dashoffset 0.12s ease",
-        filter: glow ? "drop-shadow(0 0 6px rgba(255,45,136,0.5))" : undefined,
+        filter: glow ? "drop-shadow(0 0 6px rgba(255,191,0,0.5))" : undefined,
       }}
     />
   );
@@ -547,9 +547,9 @@ function ShareRing({
         {/* held by others (light grey) */}
         {seg("#6c6c74", othersLen, ownedLen + pendingLen)}
         {/* shares you're about to buy (light pink) */}
-        {seg("#ff8ac0", pendingLen, ownedLen, true)}
+        {seg("#ffd659", pendingLen, ownedLen, true)}
         {/* shares you already own (solid pink) */}
-        {seg("#ff2d88", ownedLen, 0, true)}
+        {seg("#FFBF00", ownedLen, 0, true)}
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
         <span className="font-mono text-[40px] font-bold tabular-nums text-accent">
@@ -592,7 +592,7 @@ function Holders({ players }: { players: Player[] }) {
             <span className="flex min-w-0 items-center gap-2">
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
-                style={{ background: p.isYou ? "#ff2d88" : "#6c6c74" }}
+                style={{ background: p.isYou ? "#FFBF00" : "#6c6c74" }}
               />
               <span
                 className={
@@ -613,7 +613,7 @@ function Holders({ players }: { players: Player[] }) {
               className="h-full rounded-full transition-[width] duration-300 ease-out"
               style={{
                 width: `${(p.shares / max) * 100}%`,
-                background: p.isYou ? "#ff2d88" : "#6c6c74",
+                background: p.isYou ? "#FFBF00" : "#6c6c74",
               }}
             />
           </div>

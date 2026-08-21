@@ -86,7 +86,7 @@ export default async function Image() {
           justifyContent: "space-between",
           backgroundColor: "#050505",
           backgroundImage:
-            "radial-gradient(70% 58% at 50% 42%, rgba(255,45,136,0.22), rgba(5,5,5,0) 72%)",
+            "radial-gradient(70% 58% at 50% 42%, rgba(255,191,0,0.22), rgba(5,5,5,0) 72%)",
           color: "#e5e5e5",
           fontFamily: "JetBrains Mono",
           padding: "56px 64px",
@@ -95,7 +95,7 @@ export default async function Image() {
       >
         {/* wordmark */}
         <div style={{ display: "flex", fontSize: 40, fontWeight: 700, letterSpacing: -1 }}>
-          <span style={{ color: "#ff2d88" }}>PENNY</span>
+          <span style={{ color: "#FFBF00" }}>PENNY</span>
           <span style={{ color: "#e5e5e5" }}>POT</span>
         </div>
 
@@ -124,11 +124,11 @@ export default async function Image() {
               display: "flex",
               fontSize: hasNumber ? 150 : 86,
               fontWeight: 700,
-              color: "#ff2d88",
+              color: "#FFBF00",
               letterSpacing: hasNumber ? -4 : -2,
               marginTop: 10,
               lineHeight: 1,
-              textShadow: "0 0 44px rgba(255,45,136,0.55)",
+              textShadow: "0 0 44px rgba(255,191,0,0.55)",
             }}
           >
             {jackpot ?? "Megapot Jackpot"}
@@ -155,7 +155,7 @@ export default async function Image() {
             left: 0,
             width: "100%",
             height: 10,
-            backgroundColor: "#ff2d88",
+            backgroundColor: "#FFBF00",
           }}
         />
       </div>

@@ -9,7 +9,7 @@ const config: Config = {
       colors: {
         // Hot pink — penny arcade vibe.
         accent: {
-          DEFAULT: "#ff2d88",
+          DEFAULT: "#FFBF00",
           glow: "#ff66ad",
           dim: "#7a1545",
         },
@@ -48,7 +48,7 @@ const config: Config = {
         ],
       },
       boxShadow: {
-        glow: "0 0 24px rgba(255,45,136,0.45), 0 0 4px rgba(255,45,136,0.7)",
+        glow: "0 0 24px rgba(255,191,0,0.45), 0 0 4px rgba(255,191,0,0.7)",
       },
       keyframes: {
         pop: {
@@ -57,8 +57,8 @@ const config: Config = {
           "100%": { transform: "scale(1)" },
         },
         pulseGlow: {
-          "0%, 100%": { boxShadow: "0 0 0 rgba(255,45,136,0)" },
-          "50%": { boxShadow: "0 0 18px rgba(255,45,136,0.65)" },
+          "0%, 100%": { boxShadow: "0 0 0 rgba(255,191,0,0)" },
+          "50%": { boxShadow: "0 0 18px rgba(255,191,0,0.65)" },
         },
       },
       animation: {

@@ -18,7 +18,7 @@ export default function Page() {
           aria-label="PennyPot — home"
           className="flex items-center font-mono text-[1.458rem] font-black leading-none tracking-tighter sm:text-[1.944rem]"
         >
-          <span className="text-accent drop-shadow-[0_0_14px_rgba(255,45,136,0.6)]">
+          <span className="text-accent drop-shadow-[0_0_14px_rgba(255,191,0,0.6)]">
             PENNY
           </span>
           <span className="text-ink-100">POT</span>

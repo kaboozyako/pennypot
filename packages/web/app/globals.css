@@ -63,7 +63,7 @@ body::before {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #ff2d88;
+  background: #FFBF00;
   border: 3px solid #101010;
   box-shadow: 0 0 0 3px rgba(255, 45, 136, 0.25), 0 2px 10px rgba(255, 45, 136, 0.55);
   cursor: grab;
@@ -75,7 +75,7 @@ body::before {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #ff2d88;
+  background: #FFBF00;
   border: 3px solid #101010;
   box-shadow: 0 0 0 3px rgba(255, 45, 136, 0.25), 0 2px 10px rgba(255, 45, 136, 0.55);
   cursor: grab;

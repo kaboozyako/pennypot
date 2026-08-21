@@ -79,7 +79,7 @@ not per-drawing), and **Cranks has two buttons instead of three** (no `finalize`
 
 ## Other decisions
 
-- **Accent color: hot pink** (`#ff2d88`) on a near-black canvas, JetBrains-style
+- **Accent color: hot pink** (`#FFBF00`) on a near-black canvas, JetBrains-style
   mono for amounts, faint CRT-scanline overlay. Penny-arcade vibe.
 - **Polling** uses wagmi `refetchInterval: 15s` for state and 30s for less-volatile
   reads; the second-precision countdown is driven by a local `setInterval` so the
