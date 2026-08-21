@@ -28,19 +28,11 @@ export const metadata: Metadata = {
     title,
     description,
   },
-};
 
-import { Metadata } from 'next';
-
-export const metadata: Metadata = {
   other: {
     'base:app_id': '6a88130c39d7d26f4bad15db',
   },
 };
-
-export default function Home() {
-  return (<div>{/* Your page content */}</div>);
-}
 
 export default function RootLayout({
   children,
