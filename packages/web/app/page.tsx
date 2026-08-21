@@ -29,7 +29,7 @@ export default function Page() {
 
       <NetworkBanner />
 
-      <section className="mx-auto w-full max-w-md px-4 pt-6 -mb-26 flex justify-center">
+      <section className="mx-auto w-full max-w-md px-4 mt-12 -mb-28 flex justify-center">
         <img 
           src="/banner.png" 
           alt="SMALL STEPS TO BIG WINS" 
