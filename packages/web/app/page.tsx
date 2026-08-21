@@ -29,15 +29,13 @@ export default function Page() {
 
       <NetworkBanner />
 
-      {/* --- БЛОК БАНЕРА ПОЧАТОК --- */}
-      <section className="mx-auto w-full max-w-3xl px-4 pt-6 pb-2">
+      <section className="mx-auto w-full max-w-md px-4 pt-6 pb-2 flex justify-center">
         <img 
           src="/banner.png" 
-          alt="Promo Banner" 
-          className="w-full h-auto rounded-[18px] border border-ink-500 shadow-glow" 
+          alt="SMALL STEPS TO BIG WINS" 
+          className="w-full h-auto drop-shadow-[0_0_20px_rgba(255,191,0,0.5)]" 
         />
       </section>
-      {/* --- БЛОК БАНЕРА КІНЕЦЬ --- */}
 
       <Hero />
       <Buy />
