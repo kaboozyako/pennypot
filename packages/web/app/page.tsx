@@ -16,7 +16,8 @@ export default function Page() {
         <a
           href="/"
           aria-label="PennyPot — home"
-          className="flex items-center font-mono text-[1.458rem] font-black leading-none tracking-tighter sm:text-[1.944rem]"
+          className="flex items-center text-[1.458rem] leading-none tracking-wide sm:text-[1.944rem]"
+          style={{ fontFamily: '"Rye", serif' }}
         >
           <span className="text-accent drop-shadow-[0_0_14px_rgba(255,191,0,0.6)]">
             PENNY
