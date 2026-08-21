@@ -6,7 +6,7 @@ import type { Address } from "viem";
 const env = process.env;
 
 export const PENNYPOT_ADDRESS = (env.NEXT_PUBLIC_PENNYPOT_ADDRESS ??
-  "0x133195CEd7Cf71A7ed3a428a30816d83f022C9A1") as Address;
+  "0x68C2F365DA5D55CC4CdbD4fE3A3a10EE56d0846A") as Address;
 
 export const USDC_ADDRESS = (env.NEXT_PUBLIC_USDC_ADDRESS ??
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") as Address;

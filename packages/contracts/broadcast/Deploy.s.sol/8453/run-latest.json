@@ -4,7 +4,7 @@
       "hash": "0xdb64cd9c9e6b0bc00eda855f5c7225ea80c84f185c0655c09329f8adc2c7dbe2",
       "transactionType": "CREATE",
       "contractName": "PennyPot",
-      "contractAddress": "0x133195ced7cf71a7ed3a428a30816d83f022c9a1",
+      "contractAddress": "0x68C2F365DA5D55CC4CdbD4fE3A3a10EE56d0846A",
       "function": null,
       "arguments": [
         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
@@ -30,7 +30,7 @@
       "cumulativeGasUsed": "0x4b7ef2",
       "logs": [
         {
-          "address": "0x133195ced7cf71a7ed3a428a30816d83f022c9a1",
+          "address": "0x68C2F365DA5D55CC4CdbD4fE3A3a10EE56d0846A",
           "topics": [
             "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
             "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -73,7 +73,7 @@
       "blobGasUsed": "0xe149c",
       "from": "0xd811f3803bee46fdce64e680aa29df3a4382e7e3",
       "to": null,
-      "contractAddress": "0x133195ced7cf71a7ed3a428a30816d83f022c9a1",
+      "contractAddress": "0x68C2F365DA5D55CC4CdbD4fE3A3a10EE56d0846A",
       "daFootprintGasScalar": "0x94",
       "l1BaseFeeScalar": "0x8dd",
       "l1BlobBaseFee": "0x74014d",
@@ -88,7 +88,7 @@
   "returns": {
     "pennyPot": {
       "internal_type": "contract PennyPot",
-      "value": "0x133195CEd7Cf71A7ed3a428a30816d83f022C9A1"
+      "value": "0x68C2F365DA5D55CC4CdbD4fE3A3a10EE56d0846A"
     }
   },
   "timestamp": 1780773554,
