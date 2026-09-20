@@ -319,7 +319,7 @@ export function useConnected(): Address | undefined {
   return address;
 }
 
-// Re-export some constants for component use.
+// Re-export some constants for comonent use.
 export const CONSTS = {
   TICKET_PRICE_USDC: 1_000_000n, // 1 USDC = 1e6
   SHARE_PRICE_USDC: 10_000n, // 0.01 USDC = 1e4
