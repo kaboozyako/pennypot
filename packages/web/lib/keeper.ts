@@ -85,7 +85,7 @@ async function bufferedGasLimit(
   return (est * bps) / 100n;
 }
 
-// Advance one (closed) round through its fee lifecycle, each step gas-buffered
+// Advance one(closed) round through its fee lifecycle, each step gas-buffered
 // and idempotent/guarded:
 //   1. claimWinnings on any unclaimed tickets (settles the round's win shares).
 //   2. snapshotRoundFees once all claimed (self-sweeps referral fees into the
