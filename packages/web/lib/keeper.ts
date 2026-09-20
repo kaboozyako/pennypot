@@ -41,9 +41,10 @@ export function resolveRpcUrl(): string | undefined {
   const explicit =
     process.env.BASE_RPC_URL || process.env.NEXT_PUBLIC_BASE_RPC_URL;
   if (explicit) return explicit;
-  const key =
-    process.env.ALCHEMY_API_KEY || process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
-  return key ? `https://base-mainnet.g.alchemy.com/v2/${key}` : undefined;
+  
+  // Жорстко використовуємо новий ключ Alchemy, якщо немає прямого посилання
+  const ALCHEMY_KEY = "alch_2hQC09lWr8IDvYQI5pCQv";
+  return `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
 }
 
 // Build a write-enabled PennyPot contract bound to the keeper wallet, or return
