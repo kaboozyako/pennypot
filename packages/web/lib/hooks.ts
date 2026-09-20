@@ -157,28 +157,49 @@ export function useUserPositions(user?: Address) {
     refetchInterval: 15_000,
     queryFn: async (): Promise<Position[]> => {
       if (!user || !publicClient) return [];
-      const logs = await publicClient.getLogs({
-        address: PENNYPOT_ADDRESS,
-        event: {
-          type: "event",
-          name: "SharesBought",
-          inputs: [
-            { name: "ticketId", type: "uint256", indexed: true },
-            { name: "holder", type: "address", indexed: true },
-            { name: "payer", type: "address", indexed: false },
-            { name: "count", type: "uint8", indexed: false },
-            { name: "newSold", type: "uint8", indexed: false },
-          ],
-        },
-        args: { holder: user },
-        fromBlock: PENNYPOT_DEPLOY_BLOCK,
-        toBlock: "latest",
-      });
+      
+      const currentBlock = await publicClient.getBlockNumber();
+      const chunkSize = 2000n;
+      const allLogs = [];
+      const startBlock = BigInt(PENNYPOT_DEPLOY_BLOCK);
+
+      // Разбиваємо запит логів на безпечні шматки по 2000 блоків
+      for (let i = startBlock; i <= currentBlock; i += chunkSize) {
+        let endBlock = i + chunkSize - 1n;
+        if (endBlock > currentBlock) {
+          endBlock = currentBlock;
+        }
+
+        try {
+          const chunkLogs = await publicClient.getLogs({
+            address: PENNYPOT_ADDRESS,
+            event: {
+              type: "event",
+              name: "SharesBought",
+              inputs: [
+                { name: "ticketId", type: "uint256", indexed: true },
+                { name: "holder", type: "address", indexed: true },
+                { name: "payer", type: "address", indexed: false },
+                { name: "count", type: "uint8", indexed: false },
+                { name: "newSold", type: "uint8", indexed: false },
+              ],
+            },
+            args: { holder: user },
+            fromBlock: i,
+            toBlock: endBlock,
+          });
+          allLogs.push(...chunkLogs);
+        } catch (error) {
+          console.error(`Failed to fetch logs chunk ${i}-${endBlock}:`, error);
+          break;
+        }
+      }
+
       // Megapot ticket IDs are random 256-bit values (NOT sequential), so they
       // can't order tickets by recency. Key purchase-order off the block of the
       // user's first share purchase on each ticket instead.
       const byTicket = new Map<bigint, { shares: number; block: bigint }>();
-      for (const l of logs) {
+      for (const l of allLogs) {
         const tid = l.args.ticketId as bigint;
         const cnt = Number(l.args.count as number);
         const blk = l.blockNumber ?? 0n;
