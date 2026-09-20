@@ -18,7 +18,7 @@ const projectId =
 // Mainnet enabled — Base for all contract reads/writes, Ethereum Mainnet (chain
 // 1) for ConnectKit's ENS name/avatar resolution. If mainnet isn't enabled the
 // ENS endpoint 403s and floods the console.
-const ALCHEMY_KEY = "K6f2Iq8QM9Vx5laNF09_P";
+const ALCHEMY_KEY = "alch_2hQC09lWr8IDvYQI5pCQv";
 const baseRpcUrl = `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
 const mainnetRpcUrl = `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
 
