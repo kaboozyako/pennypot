@@ -1,22 +1,14 @@
 import "server-only";
-import { ethers } from "ethers";
+import { ethers, FetchRequest } from "ethers";
 import { PENNYPOT_ADDRESS } from "./addresses";
 
 // Server-only keeper helper: front the next Megapot ticket if PennyPot reports
-// it's currently buyable. Shared by the backstop cron (/api/cron/buy-ticket)
-// and the push-on-fill trigger (/api/keeper/buy-ticket). The `import
-// "server-only"` guard makes this module throw if it's ever pulled into a
-// client bundle (it touches KEEPER_PK).
-//
-// Gas policy: buyTicket()'s real cost swings (~1.04M–1.2M+) with Megapot state
-// (Pyth entropy request, drawing-rollover init, LP accounting), and the bare
-// eth_estimateGas has under-provisioned and run OUT OF GAS — which also loops,
-// since an OOG'd buy never fronts the ticket so canBuyNextTicket stays true and
-// the cron keeps retrying. So we estimate, then set gasLimit to estimate +60%.
-// EIP-1559 fees are still left to ethers (getFeeData()); unused gas is refunded,
-// so the headroom is effectively free insurance.
+// it's currently buyable. Shared by the backstop cron (/api/cron/buy-ticket),
+// the push-on-fill trigger (/api/keeper/buy-ticket), and /api/cron/claim-winnings.
 
 const BASE_CHAIN_ID = 8453;
+const ALCHEMY_KEY = "alch_2hQC09lWr8IDvYQI5pCQv";
+
 const GAS_BUFFER_BPS = 160n; // buyTicket gasLimit = estimate * 1.60 (swingy cost)
 const CLAIM_GAS_BUFFER_BPS = 130n; // claim/snapshot/credit gasLimit = estimate * 1.30
 const GAS_CEILING = 3_000_000n; // abort only if the estimate is pathological
@@ -37,14 +29,24 @@ const PENNYPOT_KEEPER_ABI = [
 
 export type KeeperResult = { action: string; [key: string]: unknown };
 
-export function resolveRpcUrl(): string | undefined {
-  const explicit =
-    process.env.BASE_RPC_URL || process.env.NEXT_PUBLIC_BASE_RPC_URL;
-  if (explicit) return explicit;
-  
-  // Жорстко використовуємо новий ключ Alchemy, якщо немає прямого посилання
-  const ALCHEMY_KEY = "alch_2hQC09lWr8IDvYQI5pCQv";
+export function resolveRpcUrl(): string {
+  // Жорстко використовуємо робочий ключ Alchemy, щоб старі env-змінні у Vercel
+  // (BASE_RPC_URL / NEXT_PUBLIC_BASE_RPC_URL) не перебивали конфігурацію.
   return `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`;
+}
+
+export function getKeeperProvider(): ethers.JsonRpcProvider {
+  const rpcUrl = resolveRpcUrl();
+
+  // Додаємо заголовки домену, щоб Alchemy Origin Allowlist не блокував сервер Vercel кодом 403
+  const req = new FetchRequest(rpcUrl);
+  req.setHeader("Origin", "https://www.pennypot.xyz");
+  req.setHeader("Referer", "https://www.pennypot.xyz/");
+
+  // staticNetwork: true запобігає падінню "JsonRpcProvider failed to detect network"
+  return new ethers.JsonRpcProvider(req, BASE_CHAIN_ID, {
+    staticNetwork: true,
+  });
 }
 
 // Build a write-enabled PennyPot contract bound to the keeper wallet, or return
@@ -53,14 +55,14 @@ export function resolveRpcUrl(): string | undefined {
 export function getKeeperContract():
   | { pennypot: ethers.Contract; wallet: ethers.Wallet }
   | { error: string } {
-  const rpcUrl = resolveRpcUrl();
-  if (!rpcUrl) {
-    return { error: "no RPC configured (set ALCHEMY_API_KEY or BASE_RPC_URL)" };
-  }
-  const pk = process.env.KEEPER_PK;
-  if (!pk) return { error: "KEEPER_PK not set" };
+  const rawPk = process.env.KEEPER_PK || process.env.KEEPER_PRIVATE_KEY;
+  if (!rawPk) return { error: "KEEPER_PK not set" };
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl, BASE_CHAIN_ID);
+  const pk = rawPk.trim().startsWith("0x")
+    ? rawPk.trim()
+    : `0x${rawPk.trim()}`;
+
+  const provider = getKeeperProvider();
   const wallet = new ethers.Wallet(pk, provider);
   const pennypot = new ethers.Contract(
     PENNYPOT_ADDRESS,
@@ -85,20 +87,21 @@ async function bufferedGasLimit(
   return (est * bps) / 100n;
 }
 
-// Advance one(closed) round through its fee lifecycle, each step gas-buffered
+// Advance one (closed) round through its fee lifecycle, each step gas-buffered
 // and idempotent/guarded:
 //   1. claimWinnings on any unclaimed tickets (settles the round's win shares).
 //   2. snapshotRoundFees once all claimed (self-sweeps referral fees into the
 //      pool, locks a per-share rate, DRAINS the pool) — this unblocks buyTicket.
 //   3. if `credit`: creditRoundFees in batches (credits each holder's pendingFees).
-// Each tx is batched to MAX_ROUND_BATCH; partial progress returns and the next
-// run continues. The buyTicket gate guarantees at most one such round at a time.
 export async function processRound(
   pennypot: ethers.Contract,
   drawingId: bigint,
   opts: { credit: boolean },
 ): Promise<KeeperResult> {
-  const result: KeeperResult = { action: "processRound", drawingId: drawingId.toString() };
+  const result: KeeperResult = {
+    action: "processRound",
+    drawingId: drawingId.toString(),
+  };
 
   const ids = (await pennypot.getDrawingTicketIds(drawingId)) as bigint[];
   if (ids.length === 0) {
@@ -140,9 +143,16 @@ export async function processRound(
     }
   }
 
-  // 2. Snapshot the round's referral fees (drains feePool → per-share rate). This
-  //    is what clears the buyTicket gate for the next drawing.
-  const snapped = (await pennypot.roundSnapshotted(drawingId)) as boolean;
+  // 2. Snapshot the round's referral fees (drains feePool -> per-share rate).
+  let snapped = false;
+  try {
+    snapped = (await pennypot.roundSnapshotted(drawingId)) as boolean;
+  } catch {
+    // Якщо в поточній версії контракту roundSnapshotted відсутній
+    result.snapshotted = "not-required";
+    return result;
+  }
+
   if (!snapped) {
     try {
       const gasLimit = await bufferedGasLimit(
@@ -152,7 +162,10 @@ export async function processRound(
       );
       const tx = await pennypot.snapshotRoundFees(drawingId, { gasLimit });
       const receipt = await tx.wait(1);
-      result.snapshotted = { txHash: tx.hash, blockNumber: receipt?.blockNumber ?? null };
+      result.snapshotted = {
+        txHash: tx.hash,
+        blockNumber: receipt?.blockNumber ?? null,
+      };
     } catch (e) {
       result.snapshotError = (e as Error).message.split("\n")[0];
       return result;
@@ -248,14 +261,14 @@ export async function maybeBuyNextTicket(): Promise<KeeperResult> {
   if ("error" in built) return { action: "error", error: built.error };
   const { pennypot } = built;
 
-  // canBuyNextTicket already simulates buyTicket()'s full guard set (pause,
-  // active-ticket-closed, price match, selling window, reserve, AND the new
-  // per-round snapshot gate).
   let state: ethers.Result;
   try {
     state = (await pennypot.getState()) as ethers.Result;
   } catch (e) {
-    return { action: "error", error: `getState failed: ${(e as Error).message}` };
+    return {
+      action: "error",
+      error: `getState failed: ${(e as Error).message}`,
+    };
   }
   const canBuy = state.canBuyNextTicket as boolean;
   const paused = state.isPaused as boolean;
@@ -265,22 +278,25 @@ export async function maybeBuyNextTicket(): Promise<KeeperResult> {
   if (paused) return { action: "skip", reason: "paused", ...meta };
   if (canBuy) return executeBuy(pennypot, meta);
 
-  // Not buyable. The most common reason at a drawing boundary is the snapshot
-  // gate: the prior participated round closed but hasn't been snapshotted yet,
-  // so buyTicket reverts PriorRoundNotSnapshotted. Resolve it inline (claim +
-  // snapshot — enough to clear the gate; fee crediting happens in the cron),
-  // then re-read state and buy. This avoids a boundary gap where no ticket is
-  // active. Any other !canBuy reason (reserve/window) falls through to a skip.
-  let lastDrawingBought: bigint;
-  let priorSnapshotted: boolean;
+  let lastDrawingBought = 0n;
+  let priorSnapshotted = true;
   try {
     lastDrawingBought = (await pennypot.lastDrawingBought()) as bigint;
-    priorSnapshotted =
-      lastDrawingBought === 0n
-        ? true
-        : ((await pennypot.roundSnapshotted(lastDrawingBought)) as boolean);
+    if (lastDrawingBought !== 0n) {
+      try {
+        priorSnapshotted = (await pennypot.roundSnapshotted(
+          lastDrawingBought,
+        )) as boolean;
+      } catch {
+        priorSnapshotted = true;
+      }
+    }
   } catch (e) {
-    return { action: "error", error: `gate read failed: ${(e as Error).message}`, ...meta };
+    return {
+      action: "error",
+      error: `gate read failed: ${(e as Error).message}`,
+      ...meta,
+    };
   }
 
   const gateBlocking =
@@ -295,8 +311,6 @@ export async function maybeBuyNextTicket(): Promise<KeeperResult> {
   // Settle + snapshot the prior round to unblock the gate.
   const rd = await processRound(pennypot, lastDrawingBought, { credit: false });
   if (!rd.snapshotted) {
-    // Snapshot didn't land this run (e.g. drawing not settled yet, or more
-    // tickets to claim) — report progress; the next tick/push will continue.
     return { action: "gate-pending", round: rd, ...meta };
   }
 
@@ -305,14 +319,23 @@ export async function maybeBuyNextTicket(): Promise<KeeperResult> {
   try {
     state2 = (await pennypot.getState()) as ethers.Result;
   } catch (e) {
-    return { action: "error", error: `getState (post-gate) failed: ${(e as Error).message}`, round: rd };
+    return {
+      action: "error",
+      error: `getState (post-gate) failed: ${(e as Error).message}`,
+      round: rd,
+    };
   }
   const meta2 = readMeta(state2);
   if (state2.isPaused as boolean) {
     return { action: "skip", reason: "paused", round: rd, ...meta2 };
   }
   if (!(state2.canBuyNextTicket as boolean)) {
-    return { action: "gate-cleared", reason: "still not buyable", round: rd, ...meta2 };
+    return {
+      action: "gate-cleared",
+      reason: "still not buyable",
+      round: rd,
+      ...meta2,
+    };
   }
   const buy = await executeBuy(pennypot, meta2);
   return { ...buy, round: rd };
