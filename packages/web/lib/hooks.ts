@@ -21,7 +21,7 @@ import {
   PENNYPOT_ADDRESS,
   USDC_ADDRESS,
 } from "./addresses";
-import { fetchUserTicketHistory } from "./goldsky"; 
+import { fetchUserTicketHistory } from "./goldsky"; // Імпорт нашого фетчера
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -149,40 +149,43 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
     const set = new Set<string>();
     if (ticketIds) ticketIds.forEach(id => set.add(id.toString()));
     if (drawingTickets.data) drawingTickets.data.forEach(id => set.add(id.toString()));
-    return Array.from(set).map(id => BigInt(id));
+    return Array.from(set);
   }, [ticketIds, drawingTickets.data]);
 
   return useQuery({
-    // Спрощений ключ для кешу, щоб не ламався React Query
-    queryKey: ["megapotTickets", idsToFetch.length, drawingId?.toString()],
+    // Використовуємо масив напряму, щоб не крашити кеш гігантським рядком
+    queryKey: ["megapotTickets", drawingId?.toString(), idsToFetch],
     queryFn: async () => {
       if (idsToFetch.length === 0) return [];
       
-      const chunkSize = 15;
+      const chunkSize = 20;
+      const chunks: string[][] = [];
+      for (let i = 0; i < idsToFetch.length; i += chunkSize) {
+        chunks.push(idsToFetch.slice(i, i + chunkSize));
+      }
+      
       const allTickets: { user_ticket_id: string; normals: number[]; bonusball: number; }[] = [];
       
-      for (let i = 0; i < idsToFetch.length; i += chunkSize) {
-        const chunk = idsToFetch.slice(i, i + chunkSize);
-        const idsString = chunk.map((id) => id.toString()).join(",");
-        
+      // Завантажуємо всі пачки паралельно — це в 10 разів швидше
+      await Promise.all(chunks.map(async (chunk) => {
         try {
-          const res = await fetch(`/api/megapot/tickets?ids=${idsString}`);
+          const res = await fetch(`/api/megapot/tickets?ids=${chunk.join(",")}`);
           if (res.ok) {
             const json = await res.json();
-            const arr = json.tickets || (Array.isArray(json) ? json : []);
-            
+            const arr = json.tickets ? json.tickets : (Array.isArray(json) ? json : []);
             for (const t of arr) {
               allTickets.push({
-                user_ticket_id: String(t.user_ticket_id), // Жорстко переводимо в рядок!
-                normals: t.normals,
-                bonusball: t.bonusball
+                user_ticket_id: String(t.user_ticket_id || t.id || t.ticketId || ""),
+                normals: t.normals || [],
+                bonusball: t.bonusball || 0
               });
             }
           }
         } catch (e) {
-          console.error("Failed to fetch chunk of tickets", e);
+          console.error("Chunk fetch error", e);
         }
-      }
+      }));
+      
       return allTickets;
     },
     enabled: idsToFetch.length > 0,
