@@ -1,203 +1,56 @@
+import { BigInt } from "@graphprotocol/graph-ts"
+import { UserPosition, TicketPurchase } from "../generated/schema"
 import {
-  OwnerFeesClaimed as OwnerFeesClaimedEvent,
-  OwnershipTransferStarted as OwnershipTransferStartedEvent,
-  OwnershipTransferred as OwnershipTransferredEvent,
-  Paused as PausedEvent,
-  ReserveDeposited as ReserveDepositedEvent,
-  ReserveWithdrawn as ReserveWithdrawnEvent,
   SharesBought as SharesBoughtEvent,
-  TicketBought as TicketBoughtEvent,
-  TicketFilled as TicketFilledEvent,
-  TicketSettled as TicketSettledEvent,
-  Unpaused as UnpausedEvent,
   WinningsWithdrawn as WinningsWithdrawnEvent
 } from "../generated/PennyPot/PennyPot"
-import {
-  OwnerFeesClaimed,
-  OwnershipTransferStarted,
-  OwnershipTransferred,
-  Paused,
-  ReserveDeposited,
-  ReserveWithdrawn,
-  SharesBought,
-  TicketBought,
-  TicketFilled,
-  TicketSettled,
-  Unpaused,
-  WinningsWithdrawn
-} from "../generated/schema"
-
-export function handleOwnerFeesClaimed(event: OwnerFeesClaimedEvent): void {
-  let entity = new OwnerFeesClaimed(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.amount = event.params.amount
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleOwnershipTransferStarted(
-  event: OwnershipTransferStartedEvent
-): void {
-  let entity = new OwnershipTransferStarted(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.previousOwner = event.params.previousOwner
-  entity.newOwner = event.params.newOwner
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleOwnershipTransferred(
-  event: OwnershipTransferredEvent
-): void {
-  let entity = new OwnershipTransferred(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.previousOwner = event.params.previousOwner
-  entity.newOwner = event.params.newOwner
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handlePaused(event: PausedEvent): void {
-  let entity = new Paused(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.account = event.params.account
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleReserveDeposited(event: ReserveDepositedEvent): void {
-  let entity = new ReserveDeposited(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.amount = event.params.amount
-  entity.newReserve = event.params.newReserve
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleReserveWithdrawn(event: ReserveWithdrawnEvent): void {
-  let entity = new ReserveWithdrawn(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.to = event.params.to
-  entity.amount = event.params.amount
-  entity.newReserve = event.params.newReserve
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
 
 export function handleSharesBought(event: SharesBoughtEvent): void {
-  let entity = new SharesBought(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.ticketId = event.params.ticketId
-  entity.holder = event.params.holder
-  entity.payer = event.params.payer
-  entity.count = event.params.count
-  entity.newSold = event.params.newSold
+  let userId = event.params.holder.toHexString()
+  let position = UserPosition.load(userId)
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  if (!position) {
+    position = new UserPosition(userId)
+    position.totalTicketsBought = BigInt.fromI32(0)
+    position.totalShares = BigInt.fromI32(0)
+    position.totalClaimed = BigInt.fromI32(0)
+  }
 
-  entity.save()
-}
+  position.totalTicketsBought = position.totalTicketsBought.plus(BigInt.fromI32(1))
+  position.totalShares = position.totalShares.plus(BigInt.fromI32(event.params.count))
+  
+  position.save()
 
-export function handleTicketBought(event: TicketBoughtEvent): void {
-  let entity = new TicketBought(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.drawingId = event.params.drawingId
-  entity.ticketId = event.params.ticketId
-  entity.caller = event.params.caller
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleTicketFilled(event: TicketFilledEvent): void {
-  let entity = new TicketFilled(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.ticketId = event.params.ticketId
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleTicketSettled(event: TicketSettledEvent): void {
-  let entity = new TicketSettled(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.ticketId = event.params.ticketId
-  entity.totalWin = event.params.totalWin
-  entity.winningsPerShare = event.params.winningsPerShare
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleUnpaused(event: UnpausedEvent): void {
-  let entity = new Unpaused(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.account = event.params.account
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  // === Зберігаємо конкретний квиток для списку історії ===
+  let ticketId = event.params.ticketId
+  // Формуємо унікальний ID: адреса-ticketId
+  let purchaseId = userId + "-" + ticketId.toString()
+  
+  let purchase = TicketPurchase.load(purchaseId)
+  if (!purchase) {
+    purchase = new TicketPurchase(purchaseId)
+    purchase.user = userId
+    purchase.ticketId = ticketId
+    purchase.shares = 0
+    purchase.block = event.block.number
+  }
+  
+  purchase.shares = purchase.shares + event.params.count
+  purchase.save()
 }
 
 export function handleWinningsWithdrawn(event: WinningsWithdrawnEvent): void {
-  let entity = new WinningsWithdrawn(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.user = event.params.user
-  entity.amount = event.params.amount
+  let userId = event.params.user.toHexString()
+  let position = UserPosition.load(userId)
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  if (!position) {
+    position = new UserPosition(userId)
+    position.totalTicketsBought = BigInt.fromI32(0)
+    position.totalShares = BigInt.fromI32(0)
+    position.totalClaimed = BigInt.fromI32(0)
+  }
 
-  entity.save()
+  position.totalClaimed = position.totalClaimed.plus(event.params.amount)
+  
+  position.save()
 }

@@ -1,4 +1,4 @@
-specVersion: 1.3.0
+specVersion: 1.0.0
 indexerHints:
   prune: auto
 schema:
@@ -13,47 +13,16 @@ dataSources:
       startBlock: 49750024
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.9
+      apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - OwnerFeesClaimed
-        - OwnershipTransferStarted
-        - OwnershipTransferred
-        - Paused
-        - ReserveDeposited
-        - ReserveWithdrawn
-        - SharesBought
-        - TicketBought
-        - TicketFilled
-        - TicketSettled
-        - Unpaused
-        - WinningsWithdrawn
+        - UserPosition
       abis:
         - name: PennyPot
           file: ./abis/PennyPot.json
       eventHandlers:
-        - event: OwnerFeesClaimed(uint256)
-          handler: handleOwnerFeesClaimed
-        - event: OwnershipTransferStarted(indexed address,indexed address)
-          handler: handleOwnershipTransferStarted
-        - event: OwnershipTransferred(indexed address,indexed address)
-          handler: handleOwnershipTransferred
-        - event: Paused(address)
-          handler: handlePaused
-        - event: ReserveDeposited(indexed address,uint256,uint256)
-          handler: handleReserveDeposited
-        - event: ReserveWithdrawn(indexed address,uint256,uint256)
-          handler: handleReserveWithdrawn
         - event: SharesBought(indexed uint256,indexed address,address,uint8,uint8)
           handler: handleSharesBought
-        - event: TicketBought(indexed uint256,indexed uint256,address)
-          handler: handleTicketBought
-        - event: TicketFilled(indexed uint256)
-          handler: handleTicketFilled
-        - event: TicketSettled(indexed uint256,uint256,uint256)
-          handler: handleTicketSettled
-        - event: Unpaused(address)
-          handler: handleUnpaused
         - event: WinningsWithdrawn(indexed address,uint256)
           handler: handleWinningsWithdrawn
       file: ./src/penny-pot.ts
