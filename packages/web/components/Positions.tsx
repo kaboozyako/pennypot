@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   useAccount,
@@ -25,12 +25,10 @@ import {
   useMegapotContractTickets,
   useUserPositions,
 } from "@/lib/hooks";
+import { fetchUserPositions } from "@/lib/goldsky"; // Імпорт фетчера статистики
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-// My Positions — a scannable portfolio (handoff §5): summary stats + Claim,
-// Active/All filter tabs, and per-ticket rows that mirror the current-round
-// ticket layout (balls · drawing date · share-of-ticket bar · Basescan link).
 export function Positions() {
   const { address } = useAccount();
   const chainId = useChainId();
@@ -40,9 +38,36 @@ export function Positions() {
   const feesClaimable = useFeesClaimable(address);
   const { data: gs } = useGetState();
   const currentDrawingId = gs?.[0];
+  
+  // Бере список куплених квитків (тепер миттєво з Goldsky)
   const { positions, loading, error } = useUserPositions(address);
 
-  // Each ticket's drawing id.
+  // === Стан для швидкої загальної статистики ===
+  const [fastStats, setFastStats] = useState({
+    tickets: "0",
+    shares: "0",
+    loading: true,
+  });
+
+  useEffect(() => {
+    async function loadFastStats() {
+      if (!address) return;
+      setFastStats((prev) => ({ ...prev, loading: true }));
+      const data = await fetchUserPositions(address);
+      if (data) {
+        setFastStats({
+          tickets: String(data.totalTicketsBought),
+          shares: String(data.totalShares),
+          loading: false,
+        });
+      } else {
+        setFastStats((prev) => ({ ...prev, loading: false }));
+      }
+    }
+    loadFastStats();
+  }, [address]);
+  // ============================================
+
   const ticketDrawings = useReadContracts({
     contracts: (positions ?? []).map((p) => ({
       chainId: base.id,
@@ -54,7 +79,6 @@ export function Positions() {
     query: { enabled: !!positions && positions.length > 0, refetchInterval: 60_000 },
   });
 
-  // Per-ticket detail → winningsPerShare (index 2) so we can show the won amount.
   const ticketDetail = useReadContracts({
     contracts: (positions ?? []).map((p) => ({
       chainId: base.id,
@@ -66,7 +90,6 @@ export function Positions() {
     query: { enabled: !!positions && positions.length > 0, refetchInterval: 30_000 },
   });
 
-  // Each drawing's close time → the row's date label.
   const drawingStates = useReadContracts({
     contracts: (positions ?? []).map((_p, i) => {
       const drawing = ticketDrawings.data?.[i]?.result as bigint | undefined;
@@ -88,7 +111,6 @@ export function Positions() {
     },
   });
 
-  // Lottery picks per ticket (Data API), keyed by Megapot ticket id.
   const picksQ = useMegapotContractTickets();
   const picksMap = useMemo(() => {
     const m = new Map<string, { normals: number[]; bonusball: number }>();
@@ -98,8 +120,6 @@ export function Positions() {
     return m;
   }, [picksQ.data]);
 
-  // Combine + sort newest-first: by drawing desc, then by ticketId (purchase
-  // order) desc so same-drawing tickets show the most-recently-bought on top.
   const rows = (positions ?? [])
     .map((p, i) => {
       const drawing = ticketDrawings.data?.[i]?.result as bigint | undefined;
@@ -109,14 +129,10 @@ export function Positions() {
       const det = ticketDetail.data?.[i]?.result as
         | readonly [number, number, bigint, boolean]
         | undefined;
-      // "Active" = the ticket belongs to the CURRENT Megapot round. Once the
-      // drawing flips, prior-round tickets are no longer active even if the
-      // keeper hasn't settled (claimed) them yet.
       const active =
         drawing !== undefined &&
         currentDrawingId !== undefined &&
         drawing === currentDrawingId;
-      // winningsPerShare × your shares — non-zero only for settled winners.
       const wps = det?.[2] ?? 0n;
       const won = wps > 0n ? wps * BigInt(p.shares) : 0n;
       return {
@@ -133,17 +149,18 @@ export function Positions() {
     .sort((a, b) => {
       const da = a.drawing ?? 0n;
       const db = b.drawing ?? 0n;
-      if (da !== db) return db > da ? 1 : -1; // newest drawing first
-      // Megapot ticket IDs are random, so order by purchase block (newest first).
+      if (da !== db) return db > da ? 1 : -1;
       return b.block > a.block ? 1 : a.block > b.block ? -1 : 0;
     });
 
   const activeRows = rows.filter((r) => r.active);
-  const activeShares = activeRows.reduce((s, r) => s + r.shares, 0);
+  
+  // Змінні для статистики у верхньому блоці
+  const displayTickets = fastStats.loading ? "..." : fastStats.tickets;
+  const displayShares = fastStats.loading ? "..." : fastStats.shares;
+
   const winningsAmt = claimable.data ?? 0n;
   const feesAmt = feesClaimable.data ?? 0n;
-  // Winnings and referral fees are two on-chain balances but one user-facing
-  // "Claimable" total; the Claim button withdraws whichever are non-zero.
   const claimableAmt = winningsAmt + feesAmt;
   const hasClaimable = claimableAmt > 0n;
 
@@ -158,8 +175,6 @@ export function Positions() {
   const { writeContractAsync } = useWriteContract();
   const [withdrawing, setWithdrawing] = useState(false);
 
-  // Withdraw one on-chain balance and block-anchor-poll until it clears (defeats
-  // RPC node lag). `fn` is the withdraw call, `readFn` the matching balance read.
   async function withdrawAndConfirm(
     fn: "withdraw" | "withdrawFees",
     readFn: "balance" | "pendingFees",
@@ -185,7 +200,6 @@ export function Positions() {
         })) as bigint;
         if (newBalance < amount) break;
       } catch {
-        // RPC behind on this block — wait and retry.
       }
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -200,8 +214,6 @@ export function Positions() {
       `Claiming ${formatUsdc(total)}… (confirm in wallet)`,
     );
     try {
-      // Winnings and referral fees are separate contract calls — fire whichever
-      // are non-zero, in sequence (each prompts its own wallet confirmation).
       if (winningsAmt > 0n) {
         await withdrawAndConfirm("withdraw", "balance", winningsAmt, toastId);
       }
@@ -238,10 +250,9 @@ export function Positions() {
           <p className="text-ink-200">Connect a wallet to see your positions.</p>
         ) : (
           <>
-            {/* summary: stats + Claim, one inline row */}
             <div className="flex flex-wrap items-center gap-5">
-              <Stat k="Active tickets" v={activeRows.length.toString()} />
-              <Stat k="Active shares" v={activeShares.toString()} />
+              <Stat k="Total tickets" v={displayTickets} />
+              <Stat k="Total shares" v={displayShares} />
               <Stat
                 k="Claimable"
                 v={formatUsdc(claimableAmt)}
@@ -265,7 +276,6 @@ export function Positions() {
 
             <div className="my-5 h-px bg-ink-500" />
 
-            {/* filter tabs */}
             <div className="flex gap-1.5 pb-1">
               {tabs.map(([t, n]) => (
                 <button
@@ -283,9 +293,9 @@ export function Positions() {
               ))}
             </div>
 
-            {/* rows */}
+            {/* Замінено текст loading from logs... на syncing... */}
             {loading ? (
-              <div className="mt-3 text-sm text-ink-300">loading from logs…</div>
+              <div className="mt-3 text-sm text-ink-300">syncing...</div>
             ) : error ? (
               <div className="mt-3 text-xs text-accent">{error}</div>
             ) : rows.length === 0 ? (
@@ -328,7 +338,6 @@ function PositionRow({ r }: { r: Row }) {
       : "—";
   return (
     <div className="flex flex-col gap-3 border-b border-ink-500 py-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
-      {/* identity — balls, date, won badge (top line on mobile) */}
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 sm:flex-1">
         <PositionBalls picks={r.picks} />
         <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-300">
@@ -341,7 +350,6 @@ function PositionRow({ r }: { r: Row }) {
         ) : null}
       </div>
 
-      {/* metrics — bar + shares + link (bottom line on mobile) */}
       <div className="flex items-center gap-4">
         <div className="flex w-[150px] shrink-0 flex-col items-end gap-1.5">
           <div className="h-[5px] w-full overflow-hidden rounded-[3px] bg-[#1d1d21]">
