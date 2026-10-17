@@ -51,7 +51,6 @@ export function useMegapotDrawingTime() {
   const { data: gs } = useGetState();
   const currentDrawingId = gs?.[0];
   
-  // Прибираємо select, щоб отримати весь об'єкт DrawingState
   const query = useReadContract({
     chainId: base.id,
     address: JACKPOT_ADDRESS,
@@ -64,7 +63,6 @@ export function useMegapotDrawingTime() {
     },
   });
 
-  // Повертаємо і drawingTime для Buy.tsx, і topPrize (prizePool) для Hero.tsx
   return {
     ...query,
     drawingTime: query.data ? Number(query.data.drawingTime) : undefined,
@@ -142,23 +140,45 @@ export function useDrawingTicketIds(drawingId?: bigint) {
   });
 }
 
-export function useMegapotContractTickets() {
+export function useMegapotContractTickets(ticketIds?: bigint[]) {
   const { data: gs } = useGetState();
   const drawingId = gs?.[0];
   const drawingTickets = useDrawingTicketIds(drawingId);
 
+  const idsToFetch = useMemo(() => {
+    if (ticketIds && ticketIds.length > 0) return ticketIds;
+    if (drawingTickets.data) return drawingTickets.data;
+    return [];
+  }, [ticketIds, drawingTickets.data]);
+
   return useQuery({
-    queryKey: ["megapotTickets", drawingId?.toString(), drawingTickets.data?.length],
+    queryKey: ["megapotTickets", idsToFetch.map(id => id.toString()).join(",")],
     queryFn: async () => {
-      if (!drawingTickets.data || drawingTickets.data.length === 0) return [];
-      const ids = drawingTickets.data.map((id) => id.toString());
-      const res = await fetch(`/api/megapot/tickets?ids=${ids.join(",")}`);
-      if (!res.ok) throw new Error("Failed to fetch tickets");
-      const json = await res.json();
-      return (json.tickets ?? []) as { user_ticket_id: string; normals: number[]; bonusball: number; }[];
+      if (idsToFetch.length === 0) return [];
+      
+      const chunkSize = 50;
+      const allTickets: { user_ticket_id: string; normals: number[]; bonusball: number; }[] = [];
+      
+      for (let i = 0; i < idsToFetch.length; i += chunkSize) {
+        const chunk = idsToFetch.slice(i, i + chunkSize);
+        const idsString = chunk.map((id) => id.toString()).join(",");
+        
+        try {
+          const res = await fetch(`/api/megapot/tickets?ids=${idsString}`);
+          if (res.ok) {
+            const json = await res.json();
+            if (json.tickets) {
+              allTickets.push(...json.tickets);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch chunk of tickets", e);
+        }
+      }
+      return allTickets;
     },
-    enabled: !!drawingTickets.data && drawingTickets.data.length > 0,
-    refetchInterval: 15_000,
+    enabled: idsToFetch.length > 0,
+    refetchInterval: 60_000,
   });
 }
 

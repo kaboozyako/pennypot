@@ -25,7 +25,7 @@ import {
   useMegapotContractTickets,
   useUserPositions,
 } from "@/lib/hooks";
-import { fetchUserPositions } from "@/lib/goldsky"; // Імпорт фетчера статистики
+import { fetchUserPositions } from "@/lib/goldsky"; 
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -39,10 +39,8 @@ export function Positions() {
   const { data: gs } = useGetState();
   const currentDrawingId = gs?.[0];
   
-  // Бере список куплених квитків (тепер миттєво з Goldsky)
   const { positions, loading, error } = useUserPositions(address);
 
-  // === Стан для швидкої загальної статистики ===
   const [fastStats, setFastStats] = useState({
     tickets: "0",
     shares: "0",
@@ -66,7 +64,6 @@ export function Positions() {
     }
     loadFastStats();
   }, [address]);
-  // ============================================
 
   const ticketDrawings = useReadContracts({
     contracts: (positions ?? []).map((p) => ({
@@ -111,7 +108,13 @@ export function Positions() {
     },
   });
 
-  const picksQ = useMegapotContractTickets();
+  // Збираємо всі ID квитків з історії користувача
+  const allHistoryTicketIds = useMemo(() => {
+    return (positions ?? []).map(p => p.ticketId);
+  }, [positions]);
+
+  // Передаємо масив квитків у хук, щоб завантажити номери для всіх відразу
+  const picksQ = useMegapotContractTickets(allHistoryTicketIds);
   const picksMap = useMemo(() => {
     const m = new Map<string, { normals: number[]; bonusball: number }>();
     for (const t of picksQ.data ?? []) {
@@ -155,7 +158,6 @@ export function Positions() {
 
   const activeRows = rows.filter((r) => r.active);
   
-  // Змінні для статистики у верхньому блоці
   const displayTickets = fastStats.loading ? "..." : fastStats.tickets;
   const displayShares = fastStats.loading ? "..." : fastStats.shares;
 
@@ -293,7 +295,6 @@ export function Positions() {
               ))}
             </div>
 
-            {/* Замінено текст loading from logs... на syncing... */}
             {loading ? (
               <div className="mt-3 text-sm text-ink-300">syncing...</div>
             ) : error ? (
