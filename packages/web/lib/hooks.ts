@@ -1,6 +1,5 @@
 "use client";
-import { fetchUserTicketHistory } from "./goldsky";
-import { useEffect, useState } from "react"; // Якщо їх там раптом немає
+
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
@@ -20,13 +19,22 @@ import {
 import {
   JACKPOT_ADDRESS,
   PENNYPOT_ADDRESS,
-  PENNYPOT_DEPLOY_BLOCK,
   USDC_ADDRESS,
 } from "./addresses";
-import { fetchUserTicketHistory } from "./goldsky"; // імпортуємо новий фетчер
+import { fetchUserTicketHistory } from "./goldsky"; // Імпорт нашого фетчера
 
 // -----------------------------------------------------------------------------
-// Existing standard Wagmi hooks for Megapot/PennyPot state
+// Constants
+// -----------------------------------------------------------------------------
+export const CONSTS = {
+  TICKET_PRICE_USDC: 1_000_000n,
+  SHARE_PRICE_USDC: 10_000n,
+  SHARES_PER_TICKET: 100,
+  MIN_SELLING_WINDOW_SEC: 3600,
+} as const;
+
+// -----------------------------------------------------------------------------
+// Standard Wagmi hooks for Megapot/PennyPot state
 // -----------------------------------------------------------------------------
 
 export function useGetState() {
@@ -78,19 +86,8 @@ export function useFeesClaimable(user?: Address) {
   });
 }
 
-export function useUsdcAllowance(user?: Address) {
-  return useReadContract({
-    chainId: base.id,
-    address: USDC_ADDRESS,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: user ? [user, PENNYPOT_ADDRESS] : undefined,
-    query: { enabled: !!user, refetchInterval: 5_000 },
-  });
-}
-
-export function useUsdcBalance(user?: Address) {
-  return useReadContract({
+export function useUsdc(user?: Address) {
+  const balanceRead = useReadContract({
     chainId: base.id,
     address: USDC_ADDRESS,
     abi: erc20Abi,
@@ -98,19 +95,38 @@ export function useUsdcBalance(user?: Address) {
     args: user ? [user] : undefined,
     query: { enabled: !!user, refetchInterval: 5_000 },
   });
+
+  const allowanceRead = useReadContract({
+    chainId: base.id,
+    address: USDC_ADDRESS,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: user ? [user, PENNYPOT_ADDRESS] : undefined,
+    query: { enabled: !!user, refetchInterval: 5_000 },
+  });
+
+  return {
+    balance: balanceRead.data,
+    allowance: allowanceRead.data,
+    refetch: () => {
+      balanceRead.refetch();
+      allowanceRead.refetch();
+    },
+  };
 }
 
-export type TicketData = {
-  user_ticket_id: string;
-  normals: number[];
-  bonusball: number;
-};
+export function useTicketHolders(ticketId?: bigint) {
+  return useReadContract({
+    chainId: base.id,
+    address: PENNYPOT_ADDRESS,
+    abi: pennypotAbi,
+    functionName: "getTicketHolders",
+    args: ticketId !== undefined ? [ticketId] : undefined,
+  });
+}
 
-export function useMegapotContractTickets() {
-  const { data: gs } = useGetState();
-  const drawingId = gs?.[0];
-
-  const drawingTickets = useReadContract({
+export function useDrawingTicketIds(drawingId?: bigint) {
+  return useReadContract({
     chainId: base.id,
     address: PENNYPOT_ADDRESS,
     abi: pennypotAbi,
@@ -118,6 +134,12 @@ export function useMegapotContractTickets() {
     args: drawingId !== undefined ? [drawingId] : undefined,
     query: { enabled: drawingId !== undefined, refetchInterval: 10_000 },
   });
+}
+
+export function useMegapotContractTickets() {
+  const { data: gs } = useGetState();
+  const drawingId = gs?.[0];
+  const drawingTickets = useDrawingTicketIds(drawingId);
 
   return useQuery({
     queryKey: ["megapotTickets", drawingId?.toString(), drawingTickets.data?.length],
@@ -127,11 +149,28 @@ export function useMegapotContractTickets() {
       const res = await fetch(`/api/megapot/tickets?ids=${ids.join(",")}`);
       if (!res.ok) throw new Error("Failed to fetch tickets");
       const json = await res.json();
-      return (json.tickets ?? []) as TicketData[];
+      return (json.tickets ?? []) as { user_ticket_id: string; normals: number[]; bonusball: number; }[];
     },
     enabled: !!drawingTickets.data && drawingTickets.data.length > 0,
     refetchInterval: 15_000,
   });
+}
+
+export function useTicketPicks(ticketId?: bigint) {
+  const q = useMegapotContractTickets();
+  return useMemo(() => {
+    if (ticketId === undefined || !q.data) return null;
+    return q.data.find((t) => t.user_ticket_id === ticketId.toString());
+  }, [ticketId, q.data]);
+}
+
+export function useNow() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
 }
 
 // -----------------------------------------------------------------------------
