@@ -64,7 +64,6 @@ export function useMegapotDrawingTime() {
     select: (s) => Number(s.drawingTime),
   });
 
-  // Додаємо властивість drawingTime, яку очікує компонент Buy.tsx
   return {
     ...query,
     drawingTime: query.data,
@@ -94,32 +93,30 @@ export function useFeesClaimable(user?: Address) {
 }
 
 export function useUsdc(user?: Address) {
-  const balanceRead = useReadContract({
-    chainId: base.id,
-    address: USDC_ADDRESS,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: user ? [user] : undefined,
-    query: { enabled: !!user, refetchInterval: 5_000 },
-  });
-
-  const allowanceRead = useReadContract({
-    chainId: base.id,
-    address: USDC_ADDRESS,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: user ? [user, PENNYPOT_ADDRESS] : undefined,
-    query: { enabled: !!user, refetchInterval: 5_000 },
-  });
-
-  return {
-    balance: balanceRead.data,
-    allowance: allowanceRead.data,
-    refetch: () => {
-      balanceRead.refetch();
-      allowanceRead.refetch();
+  return useReadContracts({
+    contracts: [
+      {
+        chainId: base.id,
+        address: USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [user ?? "0x0000000000000000000000000000000000000000"],
+      },
+      {
+        chainId: base.id,
+        address: USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [
+          user ?? "0x0000000000000000000000000000000000000000",
+          PENNYPOT_ADDRESS,
+        ],
+      },
+    ],
+    query: {
+      refetchInterval: 5_000,
     },
-  };
+  });
 }
 
 export function useTicketHolders(ticketId?: bigint) {
