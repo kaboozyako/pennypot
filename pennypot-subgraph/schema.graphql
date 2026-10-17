@@ -4,7 +4,7 @@ type UserPosition @entity(immutable: false) {
   totalShares: BigInt!
   totalClaimed: BigInt!
 }
-type TicketPurchase @entity(immutable: true) {
+type TicketPurchase @entity(immutable: false) {
   id: ID! # Зробимо ID формату: АдресаГаманця-IDКвитка
   user: String!
   ticketId: BigInt!
