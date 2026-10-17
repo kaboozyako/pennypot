@@ -25,7 +25,7 @@ import {
   useMegapotContractTickets,
   useUserPositions,
 } from "@/lib/hooks";
-import { fetchUserPositions } from "@/lib/goldsky"; 
+import { fetchUserPositions } from "@/lib/goldsky";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -41,9 +41,11 @@ export function Positions() {
   
   const { positions, loading, error } = useUserPositions(address);
 
+  // Додано totalClaimedRaw для збереження виграшів
   const [fastStats, setFastStats] = useState({
     tickets: "0",
     shares: "0",
+    totalClaimedRaw: "0",
     loading: true,
   });
 
@@ -56,6 +58,7 @@ export function Positions() {
         setFastStats({
           tickets: String(data.totalTicketsBought),
           shares: String(data.totalShares),
+          totalClaimedRaw: String(data.totalClaimed || "0"),
           loading: false,
         });
       } else {
@@ -108,12 +111,11 @@ export function Positions() {
     },
   });
 
-  // Збираємо всі ID квитків з історії користувача
+  // Передаємо масив квитків у хук, щоб завантажити номери для всієї історії відразу
   const allHistoryTicketIds = useMemo(() => {
     return (positions ?? []).map(p => p.ticketId);
   }, [positions]);
 
-  // Передаємо масив квитків у хук, щоб завантажити номери для всіх відразу
   const picksQ = useMegapotContractTickets(allHistoryTicketIds);
   const picksMap = useMemo(() => {
     const m = new Map<string, { normals: number[]; bonusball: number }>();
@@ -160,6 +162,7 @@ export function Positions() {
   
   const displayTickets = fastStats.loading ? "..." : fastStats.tickets;
   const displayShares = fastStats.loading ? "..." : fastStats.shares;
+  const displayTotalWinnings = fastStats.loading ? "..." : formatUsdc(BigInt(fastStats.totalClaimedRaw));
 
   const winningsAmt = claimable.data ?? 0n;
   const feesAmt = feesClaimable.data ?? 0n;
@@ -255,6 +258,7 @@ export function Positions() {
             <div className="flex flex-wrap items-center gap-5">
               <Stat k="Total tickets" v={displayTickets} />
               <Stat k="Total shares" v={displayShares} />
+              <Stat k="Total winnings" v={displayTotalWinnings} tone="mint" />
               <Stat
                 k="Claimable"
                 v={formatUsdc(claimableAmt)}

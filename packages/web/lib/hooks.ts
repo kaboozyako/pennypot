@@ -21,7 +21,7 @@ import {
   PENNYPOT_ADDRESS,
   USDC_ADDRESS,
 } from "./addresses";
-import { fetchUserTicketHistory } from "./goldsky"; // Імпорт нашого фетчера
+import { fetchUserTicketHistory } from "./goldsky";
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -145,18 +145,21 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
   const drawingId = gs?.[0];
   const drawingTickets = useDrawingTicketIds(drawingId);
 
+  // Об'єднуємо квитки поточного раунду та історії в один унікальний список
   const idsToFetch = useMemo(() => {
-    if (ticketIds && ticketIds.length > 0) return ticketIds;
-    if (drawingTickets.data) return drawingTickets.data;
-    return [];
+    const set = new Set<string>();
+    if (ticketIds) ticketIds.forEach(id => set.add(id.toString()));
+    if (drawingTickets.data) drawingTickets.data.forEach(id => set.add(id.toString()));
+    return Array.from(set).map(id => BigInt(id));
   }, [ticketIds, drawingTickets.data]);
 
   return useQuery({
-    queryKey: ["megapotTickets", idsToFetch.map(id => id.toString()).join(",")],
+    queryKey: ["megapotTickets", idsToFetch.map(id => id.toString()).sort().join(",")],
     queryFn: async () => {
       if (idsToFetch.length === 0) return [];
       
-      const chunkSize = 50;
+      // Зменшуємо пачку до 15 квитків, щоб обійти ліміт Vercel на довжину URL-адреси
+      const chunkSize = 15;
       const allTickets: { user_ticket_id: string; normals: number[]; bonusball: number; }[] = [];
       
       for (let i = 0; i < idsToFetch.length; i += chunkSize) {
@@ -167,8 +170,10 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
           const res = await fetch(`/api/megapot/tickets?ids=${idsString}`);
           if (res.ok) {
             const json = await res.json();
-            if (json.tickets) {
+            if (json.tickets && Array.isArray(json.tickets)) {
               allTickets.push(...json.tickets);
+            } else if (Array.isArray(json)) {
+              allTickets.push(...json);
             }
           }
         } catch (e) {
