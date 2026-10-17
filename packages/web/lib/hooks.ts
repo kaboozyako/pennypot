@@ -51,6 +51,7 @@ export function useMegapotDrawingTime() {
   const { data: gs } = useGetState();
   const currentDrawingId = gs?.[0];
   
+  // Прибираємо select, щоб отримати весь об'єкт DrawingState
   const query = useReadContract({
     chainId: base.id,
     address: JACKPOT_ADDRESS,
@@ -61,12 +62,13 @@ export function useMegapotDrawingTime() {
       enabled: currentDrawingId !== undefined,
       refetchInterval: 10_000,
     },
-    select: (s) => Number(s.drawingTime),
   });
 
+  // Повертаємо і drawingTime для Buy.tsx, і topPrize (prizePool) для Hero.tsx
   return {
     ...query,
-    drawingTime: query.data,
+    drawingTime: query.data ? Number(query.data.drawingTime) : undefined,
+    topPrize: query.data ? query.data.prizePool : undefined,
   };
 }
 
