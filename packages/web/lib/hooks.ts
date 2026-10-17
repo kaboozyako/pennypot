@@ -1,5 +1,6 @@
 "use client";
-
+import { fetchUserTicketHistory } from "./goldsky";
+import { useEffect, useState } from "react"; // Якщо їх там раптом немає
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
