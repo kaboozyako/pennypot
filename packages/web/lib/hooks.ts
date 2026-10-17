@@ -50,7 +50,8 @@ export function useGetState() {
 export function useMegapotDrawingTime() {
   const { data: gs } = useGetState();
   const currentDrawingId = gs?.[0];
-  return useReadContract({
+  
+  const query = useReadContract({
     chainId: base.id,
     address: JACKPOT_ADDRESS,
     abi: jackpotAbi,
@@ -62,6 +63,12 @@ export function useMegapotDrawingTime() {
     },
     select: (s) => Number(s.drawingTime),
   });
+
+  // Додаємо властивість drawingTime, яку очікує компонент Buy.tsx
+  return {
+    ...query,
+    drawingTime: query.data,
+  };
 }
 
 export function useClaimable(user?: Address) {
