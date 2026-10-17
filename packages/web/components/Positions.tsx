@@ -41,7 +41,6 @@ export function Positions() {
   
   const { positions, loading, error } = useUserPositions(address);
 
-  // Додано totalClaimedRaw для збереження виграшів
   const [fastStats, setFastStats] = useState({
     tickets: "0",
     shares: "0",
@@ -111,7 +110,6 @@ export function Positions() {
     },
   });
 
-  // Передаємо масив квитків у хук, щоб завантажити номери для всієї історії відразу
   const allHistoryTicketIds = useMemo(() => {
     return (positions ?? []).map(p => p.ticketId);
   }, [positions]);
@@ -120,7 +118,7 @@ export function Positions() {
   const picksMap = useMemo(() => {
     const m = new Map<string, { normals: number[]; bonusball: number }>();
     for (const t of picksQ.data ?? []) {
-      m.set(t.user_ticket_id, { normals: t.normals, bonusball: t.bonusball });
+      m.set(String(t.user_ticket_id), { normals: t.normals, bonusball: t.bonusball });
     }
     return m;
   }, [picksQ.data]);

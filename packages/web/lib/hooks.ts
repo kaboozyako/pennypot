@@ -21,7 +21,7 @@ import {
   PENNYPOT_ADDRESS,
   USDC_ADDRESS,
 } from "./addresses";
-import { fetchUserTicketHistory } from "./goldsky";
+import { fetchUserTicketHistory } from "./goldsky"; 
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -145,7 +145,6 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
   const drawingId = gs?.[0];
   const drawingTickets = useDrawingTicketIds(drawingId);
 
-  // Об'єднуємо квитки поточного раунду та історії в один унікальний список
   const idsToFetch = useMemo(() => {
     const set = new Set<string>();
     if (ticketIds) ticketIds.forEach(id => set.add(id.toString()));
@@ -154,11 +153,11 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
   }, [ticketIds, drawingTickets.data]);
 
   return useQuery({
-    queryKey: ["megapotTickets", idsToFetch.map(id => id.toString()).sort().join(",")],
+    // Спрощений ключ для кешу, щоб не ламався React Query
+    queryKey: ["megapotTickets", idsToFetch.length, drawingId?.toString()],
     queryFn: async () => {
       if (idsToFetch.length === 0) return [];
       
-      // Зменшуємо пачку до 15 квитків, щоб обійти ліміт Vercel на довжину URL-адреси
       const chunkSize = 15;
       const allTickets: { user_ticket_id: string; normals: number[]; bonusball: number; }[] = [];
       
@@ -170,10 +169,14 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
           const res = await fetch(`/api/megapot/tickets?ids=${idsString}`);
           if (res.ok) {
             const json = await res.json();
-            if (json.tickets && Array.isArray(json.tickets)) {
-              allTickets.push(...json.tickets);
-            } else if (Array.isArray(json)) {
-              allTickets.push(...json);
+            const arr = json.tickets || (Array.isArray(json) ? json : []);
+            
+            for (const t of arr) {
+              allTickets.push({
+                user_ticket_id: String(t.user_ticket_id), // Жорстко переводимо в рядок!
+                normals: t.normals,
+                bonusball: t.bonusball
+              });
             }
           }
         } catch (e) {
@@ -191,7 +194,7 @@ export function useTicketPicks(ticketId?: bigint) {
   const q = useMegapotContractTickets();
   const data = useMemo(() => {
     if (ticketId === undefined || !q.data) return undefined;
-    return q.data.find((t) => t.user_ticket_id === ticketId.toString());
+    return q.data.find((t) => String(t.user_ticket_id) === ticketId.toString());
   }, [ticketId, q.data]);
 
   return { data };
