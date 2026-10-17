@@ -162,10 +162,12 @@ export function useMegapotContractTickets() {
 
 export function useTicketPicks(ticketId?: bigint) {
   const q = useMegapotContractTickets();
-  return useMemo(() => {
-    if (ticketId === undefined || !q.data) return null;
+  const data = useMemo(() => {
+    if (ticketId === undefined || !q.data) return undefined;
     return q.data.find((t) => t.user_ticket_id === ticketId.toString());
   }, [ticketId, q.data]);
+
+  return { data };
 }
 
 export function useNow() {
