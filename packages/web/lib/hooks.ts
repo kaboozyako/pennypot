@@ -140,33 +140,37 @@ export function useDrawingTicketIds(drawingId?: bigint) {
   });
 }
 
-export function useMegapotContractTickets(ticketIds?: bigint[]) {
+export function useMegapotContractTickets() {
   const { data: gs } = useGetState();
   const drawingId = gs?.[0];
   const drawingTickets = useDrawingTicketIds(drawingId);
+  
+  // Автоматично підтягуємо історію користувача
+  const { address } = useAccount();
+  const { positions } = useUserPositions(address);
 
+  // Об'єднуємо поточні квитки та історію в один список для глобального кешу
   const idsToFetch = useMemo(() => {
     const set = new Set<string>();
-    if (ticketIds) ticketIds.forEach(id => set.add(id.toString()));
     if (drawingTickets.data) drawingTickets.data.forEach(id => set.add(id.toString()));
-    return Array.from(set);
-  }, [ticketIds, drawingTickets.data]);
+    if (positions) positions.forEach(p => set.add(p.ticketId.toString()));
+    return Array.from(set).map(id => BigInt(id));
+  }, [drawingTickets.data, positions]);
 
   return useQuery({
-    // Простий ключ кешу
     queryKey: ["megapotTickets", idsToFetch.length, drawingId?.toString()],
     queryFn: async () => {
       if (idsToFetch.length === 0) return [];
       
-      const chunkSize = 20;
+      const chunkSize = 10; // Беремо по 10 квитків, щоб точно уникнути Rate Limit
       const allTickets: { user_ticket_id: string; normals: number[]; bonusball: number; }[] = [];
       
-      // Завантажуємо ПОСЛІДОВНО (await усередині циклу for), щоб не отримати бан (429 Rate Limit) від Megapot
       for (let i = 0; i < idsToFetch.length; i += chunkSize) {
         const chunk = idsToFetch.slice(i, i + chunkSize);
+        const idsString = chunk.map((id) => id.toString()).join(",");
         
         try {
-          const res = await fetch(`/api/megapot/tickets?ids=${chunk.join(",")}`);
+          const res = await fetch(`/api/megapot/tickets?ids=${idsString}`);
           if (res.ok) {
             const json = await res.json();
             const arr = json.tickets ? json.tickets : (Array.isArray(json) ? json : []);
@@ -178,16 +182,9 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
                 bonusball: t.bonusball || 0
               });
             }
-          } else {
-            console.error("Megapot API returned status:", res.status);
           }
         } catch (e) {
-          console.error("Megapot chunk fetch error:", e);
-        }
-        
-        // Робимо безпечну мікропаузу перед наступним запитом
-        if (i + chunkSize < idsToFetch.length) {
-          await new Promise(r => setTimeout(r, 250));
+          console.error("Megapot API fetch error:", e);
         }
       }
       return allTickets;

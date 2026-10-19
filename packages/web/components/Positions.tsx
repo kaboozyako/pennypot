@@ -110,11 +110,9 @@ export function Positions() {
     },
   });
 
-  const allHistoryTicketIds = useMemo(() => {
-    return (positions ?? []).map(p => p.ticketId);
-  }, [positions]);
-
-  const picksQ = useMegapotContractTickets(allHistoryTicketIds);
+  // Вызываем без аргументов — хук сам подтянет историю и объединит кэш
+  const picksQ = useMegapotContractTickets();
+  
   const picksMap = useMemo(() => {
     const m = new Map<string, { normals: number[]; bonusball: number }>();
     for (const t of picksQ.data ?? []) {
