@@ -21,7 +21,7 @@ import {
   PENNYPOT_ADDRESS,
   USDC_ADDRESS,
 } from "./addresses";
-import { fetchUserTicketHistory } from "./goldsky"; // Імпорт нашого фетчера
+import { fetchUserTicketHistory } from "./goldsky"; 
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -153,26 +153,24 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
   }, [ticketIds, drawingTickets.data]);
 
   return useQuery({
-    // Використовуємо масив напряму, щоб не крашити кеш гігантським рядком
-    queryKey: ["megapotTickets", drawingId?.toString(), idsToFetch],
+    // Простий ключ кешу
+    queryKey: ["megapotTickets", idsToFetch.length, drawingId?.toString()],
     queryFn: async () => {
       if (idsToFetch.length === 0) return [];
       
       const chunkSize = 20;
-      const chunks: string[][] = [];
-      for (let i = 0; i < idsToFetch.length; i += chunkSize) {
-        chunks.push(idsToFetch.slice(i, i + chunkSize));
-      }
-      
       const allTickets: { user_ticket_id: string; normals: number[]; bonusball: number; }[] = [];
       
-      // Завантажуємо всі пачки паралельно — це в 10 разів швидше
-      await Promise.all(chunks.map(async (chunk) => {
+      // Завантажуємо ПОСЛІДОВНО (await усередині циклу for), щоб не отримати бан (429 Rate Limit) від Megapot
+      for (let i = 0; i < idsToFetch.length; i += chunkSize) {
+        const chunk = idsToFetch.slice(i, i + chunkSize);
+        
         try {
           const res = await fetch(`/api/megapot/tickets?ids=${chunk.join(",")}`);
           if (res.ok) {
             const json = await res.json();
             const arr = json.tickets ? json.tickets : (Array.isArray(json) ? json : []);
+            
             for (const t of arr) {
               allTickets.push({
                 user_ticket_id: String(t.user_ticket_id || t.id || t.ticketId || ""),
@@ -180,12 +178,18 @@ export function useMegapotContractTickets(ticketIds?: bigint[]) {
                 bonusball: t.bonusball || 0
               });
             }
+          } else {
+            console.error("Megapot API returned status:", res.status);
           }
         } catch (e) {
-          console.error("Chunk fetch error", e);
+          console.error("Megapot chunk fetch error:", e);
         }
-      }));
-      
+        
+        // Робимо безпечну мікропаузу перед наступним запитом
+        if (i + chunkSize < idsToFetch.length) {
+          await new Promise(r => setTimeout(r, 250));
+        }
+      }
       return allTickets;
     },
     enabled: idsToFetch.length > 0,
