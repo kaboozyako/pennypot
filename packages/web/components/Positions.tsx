@@ -23,10 +23,8 @@ import {
   useFeesClaimable,
   useGetState,
   useMegapotContractTickets,
-  useHistoryTicketPicks, // Новий хук для історії
-  useUserPositions,
 } from "@/lib/hooks";
-import { fetchUserPositions } from "@/lib/goldsky";
+import { fetchUserPositions, useUserPositions } from "@/lib/goldsky";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -39,7 +37,7 @@ export function Positions() {
   const feesClaimable = useFeesClaimable(address);
   const { data: gs } = useGetState();
   const currentDrawingId = gs?.[0];
-  
+
   const { positions, loading, error } = useUserPositions(address);
 
   const [fastStats, setFastStats] = useState({
@@ -76,7 +74,10 @@ export function Positions() {
       functionName: "ticketDrawingId" as const,
       args: [p.ticketId] as const,
     })),
-    query: { enabled: !!positions && positions.length > 0, refetchInterval: 60_000 },
+    query: {
+      enabled: !!positions && positions.length > 0,
+      refetchInterval: 60_000,
+    },
   });
 
   const ticketDetail = useReadContracts({
@@ -87,7 +88,10 @@ export function Positions() {
       functionName: "getTicket" as const,
       args: [p.ticketId] as const,
     })),
-    query: { enabled: !!positions && positions.length > 0, refetchInterval: 30_000 },
+    query: {
+      enabled: !!positions && positions.length > 0,
+      refetchInterval: 30_000,
+    },
   });
 
   const drawingStates = useReadContracts({
@@ -111,26 +115,17 @@ export function Positions() {
     },
   });
 
-  // Завантажуємо активні квитки та історію паралельно
-  const activePicksQ = useMegapotContractTickets();
-  
-  const allHistoryTicketIds = useMemo(() => {
-    return (positions ?? []).map(p => p.ticketId);
-  }, [positions]);
-  
-  const historyPicksQ = useHistoryTicketPicks(allHistoryTicketIds);
-
-  // Об'єднуємо результати обох хуків
+  const picksQ = useMegapotContractTickets();
   const picksMap = useMemo(() => {
     const m = new Map<string, { normals: number[]; bonusball: number }>();
-    for (const t of activePicksQ.data ?? []) {
-      m.set(String(t.user_ticket_id), { normals: t.normals, bonusball: t.bonusball });
-    }
-    for (const t of historyPicksQ.data ?? []) {
-      m.set(String(t.user_ticket_id), { normals: t.normals, bonusball: t.bonusball });
+    for (const t of picksQ.data ?? []) {
+      m.set(String(t.user_ticket_id), {
+        normals: t.normals,
+        bonusball: t.bonusball,
+      });
     }
     return m;
-  }, [activePicksQ.data, historyPicksQ.data]);
+  }, [picksQ.data]);
 
   const rows = (positions ?? [])
     .map((p, i) => {
@@ -166,10 +161,12 @@ export function Positions() {
     });
 
   const activeRows = rows.filter((r) => r.active);
-  
+
   const displayTickets = fastStats.loading ? "..." : fastStats.tickets;
   const displayShares = fastStats.loading ? "..." : fastStats.shares;
-  const displayTotalWinnings = fastStats.loading ? "..." : formatUsdc(BigInt(fastStats.totalClaimedRaw));
+  const displayTotalWinnings = fastStats.loading
+    ? "..."
+    : formatUsdc(BigInt(fastStats.totalClaimedRaw));
 
   const winningsAmt = claimable.data ?? 0n;
   const feesAmt = feesClaimable.data ?? 0n;
@@ -212,6 +209,7 @@ export function Positions() {
         })) as bigint;
         if (newBalance < amount) break;
       } catch {
+        // RPC behind on this block — wait and retry.
       }
       await new Promise((r) => setTimeout(r, 500));
     }
@@ -230,7 +228,12 @@ export function Positions() {
         await withdrawAndConfirm("withdraw", "balance", winningsAmt, toastId);
       }
       if (feesAmt > 0n) {
-        await withdrawAndConfirm("withdrawFees", "pendingFees", feesAmt, toastId);
+        await withdrawAndConfirm(
+          "withdrawFees",
+          "pendingFees",
+          feesAmt,
+          toastId,
+        );
       }
 
       queryClient.invalidateQueries();
