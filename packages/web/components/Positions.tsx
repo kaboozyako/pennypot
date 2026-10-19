@@ -41,8 +41,6 @@ export function Positions() {
   const { positions, loading, error } = useUserPositions(address);
 
   const [fastStats, setFastStats] = useState({
-    tickets: "0",
-    shares: "0",
     totalClaimedRaw: "0",
     loading: true,
   });
@@ -54,8 +52,6 @@ export function Positions() {
       const data = await fetchUserPositions(address);
       if (data) {
         setFastStats({
-          tickets: String(data.totalTicketsBought),
-          shares: String(data.totalShares),
           totalClaimedRaw: String(data.totalClaimed || "0"),
           loading: false,
         });
@@ -162,16 +158,25 @@ export function Positions() {
 
   const activeRows = rows.filter((r) => r.active);
 
-  const displayTickets = fastStats.loading ? "..." : fastStats.tickets;
-  const displayShares = fastStats.loading ? "..." : fastStats.shares;
-  const displayTotalWinnings = fastStats.loading
-    ? "..."
-    : formatUsdc(BigInt(fastStats.totalClaimedRaw));
-
   const winningsAmt = claimable.data ?? 0n;
   const feesAmt = feesClaimable.data ?? 0n;
   const claimableAmt = winningsAmt + feesAmt;
   const hasClaimable = claimableAmt > 0n;
+
+  // Точна кількість унікальних квитків (завжди збігається з вкладкою All)
+  const totalTicketsCount = rows.length;
+  // Точна сума часток по всіх квитках користувача
+  const totalSharesCount = rows.reduce((sum, r) => sum + r.shares, 0);
+  // Точна сума всіх виграшів: враховує виведені + доступні до виводу (або суму по квитках)
+  const rowsWonSum = rows.reduce((sum, r) => sum + r.won, 0n);
+  const claimedPlusPending = BigInt(fastStats.totalClaimedRaw) + claimableAmt;
+  const totalWinningsAmt =
+    rowsWonSum > claimedPlusPending ? rowsWonSum : claimedPlusPending;
+
+  const displayTickets = loading ? "..." : totalTicketsCount.toString();
+  const displayShares = loading ? "..." : totalSharesCount.toString();
+  const displayTotalWinnings =
+    loading && fastStats.loading ? "..." : formatUsdc(totalWinningsAmt);
 
   const [filter, setFilter] = useState<"Active" | "All">("Active");
   const shown = filter === "All" ? rows : activeRows;
@@ -268,7 +273,11 @@ export function Positions() {
             <div className="flex flex-wrap items-center gap-5">
               <Stat k="Total tickets" v={displayTickets} />
               <Stat k="Total shares" v={displayShares} />
-              <Stat k="Total winnings" v={displayTotalWinnings} tone="mint" />
+              <Stat
+                k="Total winnings"
+                v={displayTotalWinnings}
+                tone={totalWinningsAmt > 0n ? "mint" : "dim"}
+              />
               <Stat
                 k="Claimable"
                 v={formatUsdc(claimableAmt)}
