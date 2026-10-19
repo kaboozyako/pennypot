@@ -1,55 +1,90 @@
-import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { PENNYPOT_ADDRESS } from "@/lib/addresses";
 
-// Proxy `GET https://api.megapot.io/v1/wallets/<PENNYPOT>/tickets` so the
-// MEGAPOT_API_KEY stays server-side. Forwards `limit` and `cursor` straight
-// through. If no key is set, falls back to anonymous (rate-limited to
-// 10 req/min by Megapot; fine for low-traffic browsing).
-const MEGAPOT_API = "https://api.megapot.io/v1";
+const MEGAPOT_API_BASE = "https://api.megapot.io/v1";
+const MAX_PAGES = 20; // До 2000 квитків (20 сторінок по 100)
 
-export const dynamic = "force-dynamic";
+export async function GET() {
+  const apiKey =
+    process.env.MEGAPOT_API_KEY ||
+    process.env.NEXT_PUBLIC_MEGAPOT_API_KEY ||
+    "";
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const limit = searchParams.get("limit") ?? "25";
-  const cursor = searchParams.get("cursor");
-
-  const upstream = new URL(
-    `${MEGAPOT_API}/wallets/${PENNYPOT_ADDRESS}/tickets`,
-  );
-  upstream.searchParams.set("limit", limit);
-  if (cursor) upstream.searchParams.set("cursor", cursor);
-
-  const headers: Record<string, string> = { accept: "application/json" };
-  const apiKey = process.env.MEGAPOT_API_KEY;
-  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-
-  let res: Response;
-  try {
-    res = await fetch(upstream.toString(), { headers, cache: "no-store" });
-  } catch (e) {
-    return Response.json(
-      { error: { code: "upstream_unreachable", message: (e as Error).message } },
-      { status: 502 },
-    );
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["apikey"] = apiKey;
   }
 
-  const body = await res.text();
-  return new Response(body, {
-    status: res.status,
-    headers: {
-      "content-type":
-        res.headers.get("content-type") ?? "application/json",
-      // Forward the rate-limit signals so the client can be polite if needed.
-      ...(res.headers.get("x-ratelimit-remaining")
-        ? {
-            "x-ratelimit-remaining":
-              res.headers.get("x-ratelimit-remaining") ?? "",
-          }
-        : {}),
-      ...(res.headers.get("retry-after")
-        ? { "retry-after": res.headers.get("retry-after") ?? "" }
-        : {}),
-    },
-  });
+  const allTickets: unknown[] = [];
+  let cursor: string | null = null;
+  let firstEnvelope: Record<string, unknown> = {};
+
+  try {
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const url = new URL(
+        `${MEGAPOT_API_BASE}/wallets/${PENNYPOT_ADDRESS}/tickets`,
+      );
+      url.searchParams.set("limit", "100");
+      if (cursor) {
+        url.searchParams.set("cursor", cursor);
+      }
+
+      const res = await fetch(url.toString(), {
+        headers,
+        next: { revalidate: 15 },
+      });
+
+      if (!res.ok) {
+        if (page === 0) {
+          return NextResponse.json(
+            { error: `Megapot API error: ${res.status}`, tickets: [], data: [] },
+            { status: res.status },
+          );
+        }
+        break;
+      }
+
+      const json = (await res.json()) as Record<string, unknown>;
+      if (page === 0) {
+        firstEnvelope = json;
+      }
+
+      const pageItems = Array.isArray(json.data)
+        ? json.data
+        : Array.isArray(json.tickets)
+          ? json.tickets
+          : Array.isArray(json)
+            ? json
+            : [];
+
+      allTickets.push(...pageItems);
+
+      const hasMore = Boolean(json.has_more);
+      const nextCursor =
+        typeof json.next_cursor === "string" && json.next_cursor.length > 0
+          ? json.next_cursor
+          : null;
+
+      if (!hasMore || !nextCursor || pageItems.length === 0) {
+        break;
+      }
+      cursor = nextCursor;
+    }
+
+    return NextResponse.json({
+      ...firstEnvelope,
+      data: allTickets,
+      tickets: allTickets,
+      has_more: false,
+      next_cursor: null,
+    });
+  } catch (e) {
+    return NextResponse.json(
+      { error: (e as Error).message, tickets: [], data: [] },
+      { status: 500 },
+    );
+  }
 }
