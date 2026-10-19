@@ -23,6 +23,7 @@ import {
   useFeesClaimable,
   useGetState,
   useMegapotContractTickets,
+  useHistoryTicketPicks, // Новий хук для історії
   useUserPositions,
 } from "@/lib/hooks";
 import { fetchUserPositions } from "@/lib/goldsky";
@@ -110,16 +111,26 @@ export function Positions() {
     },
   });
 
-  // Вызываем без аргументов — хук сам подтянет историю и объединит кэш
-  const picksQ = useMegapotContractTickets();
+  // Завантажуємо активні квитки та історію паралельно
+  const activePicksQ = useMegapotContractTickets();
   
+  const allHistoryTicketIds = useMemo(() => {
+    return (positions ?? []).map(p => p.ticketId);
+  }, [positions]);
+  
+  const historyPicksQ = useHistoryTicketPicks(allHistoryTicketIds);
+
+  // Об'єднуємо результати обох хуків
   const picksMap = useMemo(() => {
     const m = new Map<string, { normals: number[]; bonusball: number }>();
-    for (const t of picksQ.data ?? []) {
+    for (const t of activePicksQ.data ?? []) {
+      m.set(String(t.user_ticket_id), { normals: t.normals, bonusball: t.bonusball });
+    }
+    for (const t of historyPicksQ.data ?? []) {
       m.set(String(t.user_ticket_id), { normals: t.normals, bonusball: t.bonusball });
     }
     return m;
-  }, [picksQ.data]);
+  }, [activePicksQ.data, historyPicksQ.data]);
 
   const rows = (positions ?? [])
     .map((p, i) => {

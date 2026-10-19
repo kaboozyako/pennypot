@@ -140,57 +140,64 @@ export function useDrawingTicketIds(drawingId?: bigint) {
   });
 }
 
+// Повертаємо оригінальний хук тільки для активного раунду (щоб він працював миттєво)
 export function useMegapotContractTickets() {
   const { data: gs } = useGetState();
   const drawingId = gs?.[0];
   const drawingTickets = useDrawingTicketIds(drawingId);
-  
-  // Автоматично підтягуємо історію користувача
-  const { address } = useAccount();
-  const { positions } = useUserPositions(address);
-
-  // Об'єднуємо поточні квитки та історію в один список для глобального кешу
-  const idsToFetch = useMemo(() => {
-    const set = new Set<string>();
-    if (drawingTickets.data) drawingTickets.data.forEach(id => set.add(id.toString()));
-    if (positions) positions.forEach(p => set.add(p.ticketId.toString()));
-    return Array.from(set).map(id => BigInt(id));
-  }, [drawingTickets.data, positions]);
 
   return useQuery({
-    queryKey: ["megapotTickets", idsToFetch.length, drawingId?.toString()],
+    queryKey: ["megapotTickets", drawingId?.toString(), drawingTickets.data?.length],
     queryFn: async () => {
-      if (idsToFetch.length === 0) return [];
+      if (!drawingTickets.data || drawingTickets.data.length === 0) return [];
+      const ids = drawingTickets.data.map((id) => id.toString());
+      const res = await fetch(`/api/megapot/tickets?ids=${ids.join(",")}`);
+      if (!res.ok) throw new Error("Failed to fetch tickets");
+      const json = await res.json();
+      return (json.tickets ?? []) as { user_ticket_id: string; normals: number[]; bonusball: number; }[];
+    },
+    enabled: !!drawingTickets.data && drawingTickets.data.length > 0,
+    refetchInterval: 15_000,
+  });
+}
+
+// НОВИЙ фоновий хук для завантаження номерів історії позицій
+export function useHistoryTicketPicks(ticketIds: bigint[]) {
+  return useQuery({
+    queryKey: ["historyPicks", ticketIds.length],
+    queryFn: async () => {
+      if (!ticketIds || ticketIds.length === 0) return [];
       
-      const chunkSize = 10; // Беремо по 10 квитків, щоб точно уникнути Rate Limit
+      const chunkSize = 15;
       const allTickets: { user_ticket_id: string; normals: number[]; bonusball: number; }[] = [];
       
-      for (let i = 0; i < idsToFetch.length; i += chunkSize) {
-        const chunk = idsToFetch.slice(i, i + chunkSize);
-        const idsString = chunk.map((id) => id.toString()).join(",");
-        
+      for (let i = 0; i < ticketIds.length; i += chunkSize) {
+        const chunk = ticketIds.slice(i, i + chunkSize);
         try {
-          const res = await fetch(`/api/megapot/tickets?ids=${idsString}`);
+          const res = await fetch(`/api/megapot/tickets?ids=${chunk.join(",")}`);
           if (res.ok) {
             const json = await res.json();
             const arr = json.tickets ? json.tickets : (Array.isArray(json) ? json : []);
-            
             for (const t of arr) {
               allTickets.push({
-                user_ticket_id: String(t.user_ticket_id || t.id || t.ticketId || ""),
+                user_ticket_id: String(t.user_ticket_id || t.id || ""),
                 normals: t.normals || [],
                 bonusball: t.bonusball || 0
               });
             }
           }
         } catch (e) {
-          console.error("Megapot API fetch error:", e);
+          console.error("Megapot chunk fetch error:", e);
+        }
+        // Пауза, щоб Megapot не заблокував нас за спам запитами
+        if (i + chunkSize < ticketIds.length) {
+          await new Promise(r => setTimeout(r, 200));
         }
       }
       return allTickets;
     },
-    enabled: idsToFetch.length > 0,
-    refetchInterval: 60_000,
+    enabled: ticketIds.length > 0,
+    staleTime: Infinity, // Номери в історії ніколи не змінюються, кешуємо назавжди
   });
 }
 
@@ -214,44 +221,28 @@ export function useNow() {
 }
 
 // -----------------------------------------------------------------------------
-// === НОВИЙ ШВИДКИЙ ХУК: Отримує історію квитків з Goldsky ===
+// === Історія позицій переведена на React Query для оптимізації ===
 // -----------------------------------------------------------------------------
 
 export function useUserPositions(address?: string) {
-  const [positions, setPositions] = useState<{ ticketId: bigint; shares: number; block: bigint }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: ["userPositions", address],
+    queryFn: async () => {
+      if (!address) return [];
+      const history = await fetchUserTicketHistory(address);
+      return history.map((item: any) => ({
+        ticketId: BigInt(item.ticketId),
+        shares: Number(item.shares),
+        block: BigInt(item.block)
+      }));
+    },
+    enabled: !!address,
+    refetchInterval: 30000,
+  });
 
-  useEffect(() => {
-    async function loadTickets() {
-      if (!address) {
-        setPositions([]);
-        return;
-      }
-      
-      setLoading(true);
-      setError(null);
-      
-      try {
-        const history = await fetchUserTicketHistory(address);
-        
-        const formatted = history.map((item: any) => ({
-          ticketId: BigInt(item.ticketId),
-          shares: Number(item.shares),
-          block: BigInt(item.block)
-        }));
-        
-        setPositions(formatted);
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load positions.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    
-    loadTickets();
-  }, [address]);
-
-  return { positions, loading, error };
+  return { 
+    positions: query.data ?? [], 
+    loading: query.isLoading, 
+    error: query.isError ? "Failed to load positions." : null 
+  };
 }
